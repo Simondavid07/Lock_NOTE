@@ -3,7 +3,7 @@ import { runJanitor } from '../../server/src/cleanup.js'
 import { createLocknoteRuntime } from '../../server/src/runtime.js'
 import { safeEqual } from '../../server/src/util.js'
 
-const runtime = createLocknoteRuntime({ requireSupabase: true })
+const runtime = createLocknoteRuntime({ requireSupabase: false })
 
 /**
  * Vercel invokes this route daily. It is deliberately not part of the public
