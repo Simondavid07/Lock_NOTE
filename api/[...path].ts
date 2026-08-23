@@ -1,4 +1,4 @@
-import { createLocknoteRuntime } from '../server/dist/runtime.js'
+import { createLocknoteRuntime } from '../server/src/runtime'
 
 const runtime = createLocknoteRuntime({ requireSupabase: false })
 

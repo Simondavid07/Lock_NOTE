@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express'
-import { runJanitor } from '../../server/dist/cleanup.js'
-import { createLocknoteRuntime } from '../../server/dist/runtime.js'
-import { safeEqual } from '../../server/dist/util.js'
+import { runJanitor } from '../../server/src/cleanup'
+import { createLocknoteRuntime } from '../../server/src/runtime'
+import { safeEqual } from '../../server/src/util'
 
 const runtime = createLocknoteRuntime({ requireSupabase: false })
 
