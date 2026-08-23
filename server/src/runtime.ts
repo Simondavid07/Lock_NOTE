@@ -28,9 +28,9 @@ export function createLocknoteRuntime(options: { requireSupabase?: boolean } = {
   const supabaseReady = isSupabaseConfigured()
   const productionLike = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1'
 
-  if ((options.requireSupabase || productionLike) && !supabaseReady) {
-    throw new Error(
-      'Supabase is required in production. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY before deploying Locknote.',
+  if (!supabaseReady) {
+    console.warn(
+      '[Locknote] Supabase credentials not found. Falling back to in-memory store. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel to enable database persistence.',
     )
   }
 
