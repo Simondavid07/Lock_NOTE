@@ -1,0 +1,16 @@
+{
+  "short_name": "Locknote",
+  "name": "Locknote — Zero-Knowledge Secret Sharing",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#FBF8F3",
+  "theme_color": "#EDE1F5",
+  "display": "standalone",
+  "orientation": "portrait"
+}
