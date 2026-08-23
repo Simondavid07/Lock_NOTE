@@ -30,7 +30,7 @@ Locknote is a zero-knowledge, self-destructing note-sharing application. It encr
 | Local application | `http://localhost:5173` |
 | Local API health check | `http://localhost:3001/api/health` |
 
-> Replace the two placeholder links after deployment and recording the demo. The screenshots above show the supplied light and dark homepage views.
+> The live application is deployed on Vercel. The screenshots above show the supplied light and dark homepage views.
 
 ## Features
 
@@ -176,8 +176,7 @@ Locknote uses Supabase Auth for GitHub OAuth. This is safer and simpler than exc
 
    ```text
    http://localhost:5173/auth/callback
-   https://YOUR-PRODUCTION-DOMAIN/auth/callback
-   https://*-YOUR-VERCEL-TEAM.vercel.app/auth/callback
+   https://lock-note-sigma.vercel.app/auth/callback
    ```
 
 The app asks Supabase to redirect to `/auth/callback`, exchanges the PKCE session code in the browser, and persists the resulting Supabase session. GitHub credentials do not belong in `.env`, `VITE_` variables, or Vercel environment variables. Follow the official Supabase GitHub provider and redirect-URL guidance when configuring the provider. [1] [2]
@@ -217,7 +216,7 @@ Add these values for **Production** and **Preview** as appropriate:
 Deploy from the Vercel dashboard or with the Vercel CLI. Once the deployment URL is available, run the live smoke test against it:
 
 ```bash
-API_URL=https://YOUR-VERCEL-PROJECT.vercel.app npm run test:live
+API_URL=https://lock-note-sigma.vercel.app npm run test:live
 ```
 
 Vercel triggers the maintenance endpoint at **03:17 UTC daily**. The endpoint checks `CRON_SECRET`, then performs an idempotent cleanup pass for expired records, stale drafts, and orphaned encrypted file blobs. Vercel cron requests use a protected Authorization header when `CRON_SECRET` is configured. [3]
@@ -283,7 +282,7 @@ Before sharing a production URL, test these user journeys manually:
 
 ## License
 
-Add the license that matches your intended distribution before publishing the repository.
+This project is licensed under the [MIT License](LICENSE).
 
 ## References
 
