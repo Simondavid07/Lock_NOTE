@@ -26,7 +26,7 @@ export function createApp(deps: AppDeps): Express {
   app.use(
     cors({
       origin(origin, cb) {
-        if (!origin || deps.corsOrigins.includes(origin)) return cb(null, true)
+        if (!origin || process.env.VERCEL === '1' || process.env.NODE_ENV === 'production' || deps.corsOrigins.includes('*') || deps.corsOrigins.includes(origin)) return cb(null, true)
         cb(null, false)
       },
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
