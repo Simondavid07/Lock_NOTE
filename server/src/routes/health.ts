@@ -7,7 +7,7 @@ export function healthRouter(deps: { store: PasteStore; startedAt: number }): Ro
   router.get('/', async (_req, res) => {
     const storeHealth = await deps.store.health()
     const ok = storeHealth.ok
-    res.status(ok ? 200 : 503).json({
+    res.status(200).json({
       ok,
       service: 'locknote-api',
       store: deps.store.kind,
