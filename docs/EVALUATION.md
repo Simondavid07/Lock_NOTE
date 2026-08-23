@@ -49,6 +49,9 @@ Lock Note builds on the familiar one-time-secret concept but adds sender control
 | Dead-switch lifecycle | A note can self-delete after a configured period of visitor inactivity, not only a fixed deadline. |
 | Encrypted file envelopes | Files are encrypted in the browser and stored separately as ciphertext blobs. |
 | Seal fingerprints | Four-word mnemonic and color-glyph fingerprints provide a human-verifiable out-of-band authenticity signal. |
+| QR-assisted delivery | The sealed link can be rendered as a QR code for deliberate cross-device transfer without changing the encrypted-envelope model. |
+| GitHub-authenticated identity | Supabase Auth returns the user to the app with a provider identity, avatar, username, and email visible in a personalized profile. |
+| Browser-local personal vault | A sender can manage browser-tracked links, active state, receipts, and withdrawal controls without a backend plaintext library. |
 | Realtime pre-seal drafting | Supabase Realtime enables presence and collaborative drafting before the final content is sealed into an encrypted note. |
 | Owner-oriented controls | Preview, receipts, withdrawal, and lifecycle controls make sender agency visible rather than hidden. |
 
@@ -81,8 +84,10 @@ The interface uses a private-correspondence visual system to make sensitive shar
 | Responsive usage | The React layout supports compose, open, and library workflows across modern browser viewport sizes. |
 | Accessible controls | Native buttons, links, inputs, labels, form feedback, and meaningful alternative text are used throughout the main flows. |
 | Privacy clarity | The interface distinguishes encrypted notes from collaboration drafts, which are intentionally pre-seal workspaces. |
+| Personalized continuity | GitHub-authenticated users see provider identity, a locally editable bio, a browser-local vault summary, and a visual contacts interface. |
+| Cross-device handoff | A labeled QR code, copyable full link, native sharing where supported, and a human-verifiable fingerprint make secure delivery understandable. |
 
-For a visual reference, see the light and dark screenshots in the [README](../README.md).
+For visual evidence, see the composer, GitHub-authenticated profile, browser-local vault, and QR delivery screenshots in the [README](../README.md) and the detailed [Feature Guide](FEATURES.md).
 
 ## 5. Performance, Reliability & Demo Quality — 20 marks
 
@@ -106,10 +111,11 @@ Lock Note is designed for demonstrable reliability. The project includes automat
 3. Open the link in a separate browser profile and decrypt it.
 4. Repeat with burn-after-read enabled, then show that the second read is unavailable.
 5. Show owner preview, receipt, and remote withdrawal controls.
-6. Demonstrate a passphrase-protected note or encrypted file attachment.
-7. Sign in with GitHub and show the personal dashboard.
-8. Explain that collaboration occurs before sealing and is intentionally documented as a different trust boundary.
-9. Run or show the passing live smoke command.
+6. Show the seal fingerprint and QR code; explain that both represent the same sensitive full link and should be shared only with the intended recipient.
+7. Demonstrate a passphrase-protected note or encrypted file attachment.
+8. Sign in with GitHub and show the personalized profile, editable local bio, browser-local vault, and local contacts interface.
+9. Explain that collaboration occurs before sealing and is intentionally documented as a different trust boundary.
+10. Run or show the passing live smoke command.
 
 A concise evaluator script is included in [DEMO.md](DEMO.md).
 
@@ -126,6 +132,7 @@ The repository is structured so a reviewer can understand the project before run
 | [API.md](API.md) | Endpoint contracts and lifecycle operations. |
 | [TESTING.md](TESTING.md) | Test strategy and release verification commands. |
 | [ENVIRONMENT.md](ENVIRONMENT.md) | Safe configuration guidance and secret-handling rules. |
+| [FEATURES.md](FEATURES.md) | Visual product tour of GitHub identity, browser-local vault management, QR delivery, fingerprints, and sender controls. |
 | [COMPARISON.md](COMPARISON.md) | Meaningful differentiation from classic pastebin workflows. |
 
 > Reviewers should use `.env.example` or `.env.submission.template` as a copyable configuration map. Real service-role keys and OAuth secrets are intentionally excluded from Git history and submission archives.

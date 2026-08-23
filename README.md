@@ -36,6 +36,28 @@ Locknote is documented and tested as a complete submission rather than a visual 
 
 <p align="center"><em>Locknote’s private-correspondence interface in light and dark themes.</em></p>
 
+## Product experience gallery
+
+### GitHub-authenticated personal profile and vault
+
+<p align="center">
+  <img src="docs/assets/locknote-github-profile-dashboard.png" alt="Locknote GitHub-authenticated profile showing verified identity, editable research bio, vault contacts, and local security statistics" width="100%" />
+</p>
+
+After GitHub sign-in through Supabase Auth, Locknote presents a personalized identity view with the provider avatar, username, email, a custom local bio/research tag, and a route to the user's browser-local vault. The vault summary keeps sender controls and tracked link status easy to find without creating a server-side plaintext archive.
+
+### QR-assisted secure delivery
+
+<p align="center">
+  <img src="docs/assets/locknote-qr-share-delivery.png" alt="Locknote sealed-delivery screen showing a private link, fragment-key explanation, seal fingerprint, QR code, expiry policy, and withdrawal control" width="100%" />
+</p>
+
+The delivery screen makes the privacy model understandable at the point of sharing. It provides a copyable private link, policy badges, a human-verifiable seal fingerprint, browser-native sharing where available, a remote-withdrawal control, and a QR code for opening the full link on another intended device.
+
+> The QR code represents the full private share URL, including its fragment-held decryption material. Treat it with the same care as the copied link and show it only to the intended recipient.
+
+For a detailed feature-by-feature explanation and privacy boundary, see the **[Feature Guide](docs/FEATURES.md)**.
+
 ## Demo
 
 | Resource | Link |
@@ -63,7 +85,11 @@ Locknote is documented and tested as a complete submission rather than a visual 
 | **Receipts and owner preview** | The owner can preview a note without burning it, inspect delivery metadata, and retrieve view receipts. |
 | **Realtime collaboration drafts** | Temporary draft rooms use Supabase Realtime and are sealed or automatically purged after inactivity. |
 | **GitHub sign-in** | GitHub OAuth is handled by Supabase Auth; GitHub credentials stay in Supabase provider configuration, never in the browser bundle or API source. |
-| **Personal library** | The dashboard keeps links created in the current browser available for copying, receipt checks, and withdrawal. |
+| **Personalized profile** | Authenticated users see provider identity, avatar, username, email, a local custom bio/research tag, and a direct route to their personal vault. |
+| **Browser-local vault** | The dashboard keeps links created in the current browser available for copying, receipt checks, and withdrawal without becoming a server-side plaintext archive. |
+| **Vault contacts interface** | A browser-local contact list helps users visually organize a sharing network; it is not a server-synchronized directory or decryption permission system. |
+| **QR-assisted delivery** | The sealed-delivery card renders the full private link as an accessible QR code for intentional cross-device transfer. |
+| **Seal fingerprints** | Human-friendly word and glyph fingerprints can be compared with a recipient out of band before opening a sensitive note. |
 
 ## Security model
 
@@ -313,6 +339,7 @@ Before sharing a production URL, test these user journeys manually:
 | [Demo guide](docs/DEMO.md) | A concise evaluator walkthrough and troubleshooting sequence. |
 | [Environment guide](docs/ENVIRONMENT.md) | Safe local, Vercel, OAuth, and submission configuration instructions. |
 | [Submission checklist](docs/SUBMISSION_CHECKLIST.md) | Final reviewer, deployment, and secret-safety checks before handoff. |
+| [Feature guide](docs/FEATURES.md) | Visual product tour of GitHub profile, vault, QR delivery, fingerprints, and lifecycle controls. |
 | [Architecture guide](docs/ARCHITECTURE.md) | Service boundaries, data flow, and component overview. |
 | [Security and threat model](docs/SECURITY.md) | Cryptographic protocol details and residual risks. |
 | [API reference](docs/API.md) | API operations, payloads, and lifecycle behavior. |

@@ -21,13 +21,15 @@ Use the deployed app at <https://lock-note-sigma.vercel.app/>. Keep a second bro
 
 Point to the composer and the privacy-oriented interface. Explain that the intended use cases are temporary credentials, personal messages, code snippets, and files.
 
-### 2. Seal and share a note — 45 seconds
+### 2. Seal, fingerprint, and share a note — 55 seconds
 
-Enter a short test note, select **burn after reading**, and seal it. Show the generated link.
+Enter a short test note, select **burn after reading**, and seal it. Show the generated link, the lifecycle badge, the seal fingerprint, and the QR code.
 
 > “The decryption material is placed after the `#` in the URL. Browsers do not send URL fragments to the server in normal HTTP requests, so the backend gets ciphertext and delivery metadata but not the decryption key.”
 
-Show the share link without exposing a real secret. If available, show the seal fingerprint and explain that it is a human-friendly verification aid.
+Explain that the **copyable link, native share option, and QR code are three ways to transfer the same full private URL**. The QR code is convenient for opening the link on another device, but it is sensitive because it encodes the entire delivery link. Use the seal fingerprint as a compact out-of-band verification cue.
+
+For a visual reference, see the sealed delivery screenshot in [FEATURES.md](FEATURES.md#sealed-delivery-qr-handoff-and-sender-controls).
 
 ### 3. Recipient read and burn lifecycle — 45 seconds
 
@@ -51,11 +53,15 @@ Create a passphrase-protected note or attach a small non-sensitive file.
 
 If time allows, show the collaboration entry point and say clearly that drafts are a temporary pre-seal workspace rather than end-to-end encrypted co-editing.
 
-### 6. Authentication and personal library — 25 seconds
+### 6. GitHub identity, personal profile, and browser-local vault — 40 seconds
 
-Select **Continue with GitHub**, complete sign-in if necessary, and show the dashboard.
+Select **Continue with GitHub**, complete sign-in if necessary, and open the profile/dashboard.
 
-> “GitHub authentication is handled through Supabase Auth. The dashboard helps the sender keep track of the links created in this browser, receipts, and withdrawal controls.”
+> “GitHub authentication is handled through Supabase Auth. The profile shows the verified provider identity, avatar, username, and email. The custom bio and visual contact list are local personalization features, while the vault manages the links created in this browser.”
+
+Point out the editable research bio, the View Vault action, the sealed/active link statistics, and the contacts interface. Explain the privacy boundary: the dashboard is not a server-side plaintext note archive, contacts do not grant a user decryption access, and the current personalization settings are browser-local.
+
+For a visual reference, see the GitHub-authenticated profile screenshot in [FEATURES.md](FEATURES.md#github-authenticated-personal-profile-and-vault).
 
 ### 7. Reliability evidence — 30 seconds
 
@@ -78,7 +84,8 @@ The expected passing output covers health, note creation, safe metadata, owner p
 | Architecture | “React/Vite performs cryptography in-browser; an Express API manages lifecycle state; Supabase stores encrypted records; Vercel hosts the deployed system.” |
 | UX and accessibility | “The app uses clear workflow states, keyboard-accessible controls, theme support, actionable errors, and a focused compose-to-share journey.” |
 | Reliability | “A real readiness endpoint, rate limits, protected maintenance, test suites, and a live production smoke test make the demo repeatable.” |
-| Documentation | “The README is supported by dedicated evaluation, architecture, security, API, testing, environment, and deployment documents.” |
+| Documentation | “The README is supported by dedicated evaluation, feature, demo, architecture, security, API, testing, environment, and deployment documents.” |
+| Personalized product proof | “The GitHub-authenticated profile, browser-local vault, QR delivery card, and seal fingerprint make the secure-sharing journey visible to reviewers.” |
 
 ## Troubleshooting during a demo
 
