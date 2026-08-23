@@ -2,7 +2,14 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import dotenv from 'dotenv'
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+let rootDir = process.cwd()
+try {
+  if (typeof import.meta !== 'undefined' && import.meta.url) {
+    rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+  }
+} catch {
+  rootDir = process.cwd()
+}
 dotenv.config({ path: path.join(rootDir, '.env') })
 
 export const env = {
