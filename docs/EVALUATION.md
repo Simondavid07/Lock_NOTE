@@ -139,6 +139,7 @@ The repository is structured so a reviewer can understand the project before run
 | [ENVIRONMENT.md](ENVIRONMENT.md) | Safe configuration guidance and secret-handling rules. |
 | [FEATURES.md](FEATURES.md) | Visual product tour of GitHub identity, owner-only profile/contact metadata, browser-local capability vault management, QR delivery, fingerprints, and sender controls. |
 | [`sql/003_profiles_and_contacts.sql`](sql/003_profiles_and_contacts.sql) | Idempotent profile/contact schema with strict owner-only row-level security and an explicit no-secrets data contract. |
+| [`sql/004_revoke_rls_trigger_execute.sql`](sql/004_revoke_rls_trigger_execute.sql) | Least-privilege remediation that removes exposed caller execution of the SECURITY DEFINER RLS event-trigger helper. |
 | [COMPARISON.md](COMPARISON.md) | Meaningful differentiation from classic pastebin workflows. |
 
 > Reviewers should use `.env.example` or `.env.submission.template` as a copyable configuration map. Real service-role keys and OAuth secrets are intentionally excluded from Git history and submission archives.

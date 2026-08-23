@@ -17,6 +17,7 @@ This directory contains the project documentation used for implementation, deplo
 | [sql/001_init.sql](sql/001_init.sql) | Bootstrap a new Supabase project. |
 | [sql/002_harden_drafts_rls.sql](sql/002_harden_drafts_rls.sql) | Apply draft access hardening to an existing Lock Note installation. |
 | [sql/003_profiles_and_contacts.sql](sql/003_profiles_and_contacts.sql) | Add owner-only profile/contact metadata tables with an explicit no-secrets data contract. |
+| [sql/004_revoke_rls_trigger_execute.sql](sql/004_revoke_rls_trigger_execute.sql) | Remove public execute access from the SECURITY DEFINER RLS event-trigger helper. |
 
 ## Suggested evaluation reading order
 

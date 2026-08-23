@@ -118,3 +118,9 @@ After `001_init.sql` and `002_harden_drafts_rls.sql`, apply [`docs/sql/003_profi
 Before a production release, run the standard type, unit/integration, build, and production-dependency checks in [TESTING.md](TESTING.md), then also run `npm run test:bundle` and `npm run test:accessibility`. Confirm the GitHub `Quality gate` workflow is green after pushing. The daily/manual `Production smoke` workflow then verifies the public lifecycle and required static headers against the production alias without needing repository secrets.
 
 The enforced Content Security Policy in `vercel.json` is part of the release boundary. If an integration needs a new external origin, document why it is required, add only its narrowest origin/directive, and re-test GitHub OAuth, Supabase connectivity, avatar rendering, QR rendering, and the public browser suite before deployment.
+
+## Final authentication and database hardening
+
+The production project requires the current password before an email-password change, enforces a twelve-character minimum, and requires lowercase, uppercase, numeric, and symbol characters for new or changed email passwords. Supabase’s HaveIBeenPwned leaked-password check is not available on the project’s current Free plan, so it remains an externally enforced platform limitation rather than a repository defect. GitHub OAuth remains the primary authenticated route.
+
+Apply [`docs/sql/004_revoke_rls_trigger_execute.sql`](sql/004_revoke_rls_trigger_execute.sql) after the earlier database migrations. It removes `PUBLIC`, `anon`, and `authenticated` execute rights from the `SECURITY DEFINER` event-trigger helper used to auto-enable RLS. The database event-trigger mechanism continues to run the helper; browser/API callers cannot invoke it through the exposed schema.

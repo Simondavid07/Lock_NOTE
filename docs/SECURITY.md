@@ -51,3 +51,9 @@ Locknote adheres to strict cryptographic principles to ensure zero-knowledge dat
 - **Release Gates**: CI fails on type, test, production-audit, bundle-budget, or serious/critical accessibility regressions. A scheduled/manual live smoke job verifies both the zero-knowledge lifecycle and production static headers.
 
 > **Operational caveat:** the enforced CSP is intentionally narrow. When adding an external asset, analytics provider, identity provider, or browser integration, update the policy only after confirming the exact required origins and testing the OAuth, QR, and Supabase flows.
+
+### Final review findings
+
+The Supabase security advisor initially identified the database RLS auto-enable event-trigger helper as publicly executable. Migration `004_revoke_rls_trigger_execute.sql` removes `PUBLIC`, `anon`, and `authenticated` execution rights while preserving invocation by the database event-trigger mechanism. The post-remediation advisory no longer reports public execution of that SECURITY DEFINER function.
+
+The project’s free Supabase plan does not provide the HaveIBeenPwned leaked-password check. As a compensating baseline for the enabled email provider, production requires the current password for password changes, a twelve-character minimum, and lowercase, uppercase, numeric, and symbol characters. This does not change the zero-knowledge note flow or GitHub OAuth.
