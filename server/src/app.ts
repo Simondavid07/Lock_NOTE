@@ -21,6 +21,7 @@ export interface AppDeps {
 
 export function createApp(deps: AppDeps): Express {
   const app = express()
+  app.set('trust proxy', true)
   app.disable('x-powered-by')
   app.use(helmet({ contentSecurityPolicy: false }))
   app.use(
@@ -40,6 +41,7 @@ export function createApp(deps: AppDeps): Express {
     limit: 300,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
+    validate: { trustProxy: false },
     message: { error: 'Rate limit exceeded' },
   })
   app.use('/api', globalLimiter)
