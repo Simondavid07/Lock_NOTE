@@ -134,7 +134,5 @@ export const api = {
     request<{ roomId: string; updatedAt: number }>(`/api/drafts/${encodeURIComponent(roomId)}`, { method: 'PUT', body: JSON.stringify({ content }) }),
   sealDraft: (roomId: string, ownerToken: string) =>
     request<undefined>(`/api/drafts/${encodeURIComponent(roomId)}/seal`, { method: 'DELETE', body: JSON.stringify({ ownerToken }) }),
-  exchangeGithubCode: (code: string) =>
-    request<{ user: { username: string; name: string; avatarUrl: string; email: string; provider: string } }>('/api/auth/github', { method: 'POST', body: JSON.stringify({ code }) }),
   health: () => request<{ ok: boolean; store: string; storeDetail: string | null; uptimeSeconds: number }>('/api/health'),
 }

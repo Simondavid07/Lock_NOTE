@@ -1,17 +1,28 @@
 import { Router } from 'express'
 import type { PasteStore } from '../store.js'
 
+function safeHealthDetail(detail: string | undefined): string | null {
+  if (!detail) return null
+
+  const normalized = detail
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return normalized ? normalized.slice(0, 240) : null
+}
+
 export function healthRouter(deps: { store: PasteStore; startedAt: number }): Router {
   const router = Router()
 
   router.get('/', async (_req, res) => {
     const storeHealth = await deps.store.health()
     const ok = storeHealth.ok
-    res.status(200).json({
+    res.status(ok ? 200 : 503).json({
       ok,
       service: 'locknote-api',
       store: deps.store.kind,
-      storeDetail: storeHealth.detail ?? null,
+      storeDetail: safeHealthDetail(storeHealth.detail),
       uptimeSeconds: Math.round((Date.now() - deps.startedAt) / 1000),
       time: new Date().toISOString(),
     })

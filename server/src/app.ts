@@ -21,13 +21,15 @@ export interface AppDeps {
 
 export function createApp(deps: AppDeps): Express {
   const app = express()
-  app.set('trust proxy', true)
+  // Vercel places exactly one trusted proxy in front of each serverless function.
+  // Do not use `true`: that would trust arbitrary client-provided forwarding chains.
+  app.set('trust proxy', 1)
   app.disable('x-powered-by')
   app.use(helmet({ contentSecurityPolicy: false }))
   app.use(
     cors({
       origin(origin, cb) {
-        if (!origin || process.env.VERCEL === '1' || process.env.NODE_ENV === 'production' || deps.corsOrigins.includes('*') || deps.corsOrigins.includes(origin)) return cb(null, true)
+        if (!origin || deps.corsOrigins.includes('*') || deps.corsOrigins.includes(origin)) return cb(null, true)
         cb(null, false)
       },
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -82,6 +84,7 @@ export function createApp(deps: AppDeps): Express {
       return
     }
     const status = err instanceof SyntaxError ? 400 : 500
+    if (status === 500) console.error('[Locknote] unhandled API error:', err)
     res.status(status).json({ error: status === 500 ? 'internal_error' : 'bad_request' })
   })
 

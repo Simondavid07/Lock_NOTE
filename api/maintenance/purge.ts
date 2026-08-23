@@ -1,9 +1,23 @@
 import type { Request, Response } from 'express'
 import { runJanitor } from '../../server/src/cleanup'
-import { createLocknoteRuntime } from '../../server/src/runtime'
+import { createLocknoteRuntime, type LocknoteRuntime } from '../../server/src/runtime'
 import { safeEqual } from '../../server/src/util'
 
-const runtime = createLocknoteRuntime({ requireSupabase: false })
+let runtime: LocknoteRuntime | null = null
+let bootstrapError: Error | null = null
+
+function getRuntime(): LocknoteRuntime | null {
+  if (runtime || bootstrapError) return runtime
+
+  try {
+    runtime = createLocknoteRuntime({ requireSupabase: true })
+  } catch (error) {
+    bootstrapError = error instanceof Error ? error : new Error('Locknote maintenance initialization failed.')
+    console.error('[maintenance] initialization failed:', bootstrapError.message)
+  }
+
+  return runtime
+}
 
 /**
  * Vercel invokes this route daily. It is deliberately not part of the public
@@ -23,8 +37,18 @@ export default async function purge(request: Request, response: Response) {
     return
   }
 
+  const locknoteRuntime = getRuntime()
+  if (!locknoteRuntime) {
+    response.status(503).json({
+      ok: false,
+      error: 'service_unavailable',
+      message: bootstrapError?.message ?? 'Locknote storage is not configured.',
+    })
+    return
+  }
+
   try {
-    const result = await runJanitor(runtime.backend)
+    const result = await runJanitor(locknoteRuntime.backend)
     response.setHeader('Cache-Control', 'no-store, max-age=0')
     response.status(200).json({ ok: true, ...result })
   } catch (error) {

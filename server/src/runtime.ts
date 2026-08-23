@@ -1,4 +1,4 @@
-import { env, isSupabaseConfigured } from './config.js'
+import { env, getSupabaseConfigurationError, isSupabaseConfigured } from './config.js'
 import { MemoryFileStore, SupabaseFileStore } from './blob-store.js'
 import { createMemoryBackend } from './memory-store.js'
 import { ConsoleAuditSink, SupabaseAuditSink } from './audit.js'
@@ -27,10 +27,15 @@ export interface LocknoteRuntime {
 export function createLocknoteRuntime(options: { requireSupabase?: boolean } = {}): LocknoteRuntime {
   const supabaseReady = isSupabaseConfigured()
   const productionLike = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1'
+  const configError = getSupabaseConfigurationError()
+
+  if (!supabaseReady && (productionLike || options.requireSupabase)) {
+    throw new Error(`Locknote persistence is unavailable: ${configError ?? 'Supabase is not configured.'}`)
+  }
 
   if (!supabaseReady) {
     console.warn(
-      '[Locknote] Supabase credentials not found. Falling back to in-memory store. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel to enable database persistence.',
+      `[Locknote] ${configError ?? 'Supabase credentials not found.'} Falling back to in-memory storage for local development only.`,
     )
   }
 

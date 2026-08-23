@@ -46,8 +46,9 @@ alter table public.pastes enable row level security;
 
 -- ------------------------------------------------------------
 -- 2. Drafts — ephemeral pre-seal collaboration scratchpads.
---    RLS allows anon clients to sync via Realtime. They are
---    wiped on seal and by the hourly janitor (24h TTL).
+--    The Locknote API owns all persistence using the server-only service
+--    role. Realtime Broadcast and Presence carry ephemeral collaboration
+--    messages without granting browser clients direct table access.
 -- ------------------------------------------------------------
 create table if not exists public.drafts (
   room_id     text primary key,
@@ -61,19 +62,9 @@ create index if not exists idx_drafts_updated on public.drafts (updated_at);
 
 alter table public.drafts enable row level security;
 
--- Policies are created idempotently so a partial re-run can't collide.
-do $$
-begin
-  if not exists (select 1 from pg_policy where polname = 'drafts anon insert') then
-    create policy "drafts anon insert" on public.drafts for insert to anon with check (true);
-  end if;
-  if not exists (select 1 from pg_policy where polname = 'drafts anon select') then
-    create policy "drafts anon select" on public.drafts for select to anon using (true);
-  end if;
-  if not exists (select 1 from pg_policy where polname = 'drafts anon update') then
-    create policy "drafts anon update" on public.drafts for update to anon using (true);
-  end if;
-end $$;
+-- Do not create anon/authenticated policies. Browser clients use the API,
+-- while the server-only service role bypasses RLS for the intended operations.
+revoke all on table public.drafts from anon, authenticated;
 
 -- ------------------------------------------------------------
 -- 3. Events — privacy-safe audit trail (ids only, never content).

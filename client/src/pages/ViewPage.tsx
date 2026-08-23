@@ -19,6 +19,7 @@ import {
 } from '../lib/crypto'
 import { base64urlToBytes, toArrayBuffer, formatRelative } from '../lib/encoding'
 import { api, type ConsumeResult, type Receipt } from '../lib/api'
+import { storageObjectUrl } from '../lib/supabase'
 
 type ViewState =
   | { kind: 'loading' }
@@ -283,7 +284,7 @@ export function ViewPage() {
         kdf: consume.kdf,
         iterations: consume.iterations,
       })
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/secrets/${consume.storagePath}`)
+      const res = await fetch(storageObjectUrl(consume.storagePath))
       if (!res.ok) throw new Error('storage unavailable')
       const ct = new Uint8Array(await res.arrayBuffer())
       const plain = await decrypt(key, ct, base64urlToBytes(consume.fileMeta.iv), aadForFile(consume.id))

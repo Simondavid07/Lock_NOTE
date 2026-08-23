@@ -3,8 +3,36 @@ import { createClient, type SupabaseClient, type User } from '@supabase/supabase
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
+function isSupabaseProjectUrl(value: string | undefined): value is string {
+  if (!value) return false
+
+  try {
+    const parsed = new URL(value)
+    return (
+      parsed.protocol === 'https:' &&
+      /^[a-z0-9-]+\.supabase\.co$/i.test(parsed.hostname) &&
+      (parsed.pathname === '' || parsed.pathname === '/') &&
+      !parsed.search &&
+      !parsed.hash
+    )
+  } catch {
+    return false
+  }
+}
+
+export function getSupabaseConfigurationError(): string | null {
+  if (!url && !anonKey) return null
+  if (!isSupabaseProjectUrl(url)) {
+    return 'Supabase is configured with an invalid URL. Use the project API URL (https://your-project-ref.supabase.co), not a Supabase dashboard URL.'
+  }
+  if (!anonKey) return 'Supabase is missing its browser anon key.'
+  return null
+}
+
+const configurationError = getSupabaseConfigurationError()
+
 export const supabase: SupabaseClient | null =
-  url && anonKey
+  url && anonKey && !configurationError
     ? createClient(url, anonKey, {
         auth: {
           flowType: 'pkce',
@@ -61,13 +89,13 @@ export function isSupabaseRealtimeAvailable(): boolean {
 }
 
 export function storageObjectUrl(storagePath: string): string {
-  if (!url) throw new Error('Supabase Storage is not configured.')
+  if (!url || configurationError) throw new Error(configurationError ?? 'Supabase Storage is not configured.')
   return `${url}/storage/v1/object/public/secrets/${storagePath}`
 }
 
 export async function signInWithGithub() {
   if (!supabase) {
-    throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY before enabling GitHub sign-in.')
+    throw new Error(configurationError ?? 'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY before enabling GitHub sign-in.')
   }
 
   const { error } = await supabase.auth.signInWithOAuth({

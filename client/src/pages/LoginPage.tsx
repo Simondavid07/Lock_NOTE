@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import { Button, Card, TextInput } from '../components/ui'
-import { signInWithGithub, supabase } from '../lib/supabase'
+import { getSupabaseConfigurationError, signInWithGithub, supabase } from '../lib/supabase'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -18,7 +18,7 @@ export function LoginPage() {
       await signInWithGithub()
     } catch (err) {
       console.error(err)
-      toast.error('GitHub authentication failed — try email login')
+      toast.error(err instanceof Error ? err.message : 'GitHub authentication failed — try email login')
       setLoading(false)
     }
   }
@@ -27,6 +27,11 @@ export function LoginPage() {
     e.preventDefault()
     if (!email || !password) { toast.error('Enter email and password'); return }
     if (!supabase) {
+      const configurationError = getSupabaseConfigurationError()
+      if (configurationError) {
+        toast.error(configurationError)
+        return
+      }
       localStorage.setItem('locknote:demo_user', JSON.stringify({ email, name: email.split('@')[0] }))
       toast.success('Welcome to your private library')
       navigate('/dashboard')

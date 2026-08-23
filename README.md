@@ -141,10 +141,10 @@ The `SUPABASE_SERVICE_ROLE_KEY` is server-only. Do **not** put it in a `VITE_` v
 
 ### 3. Bootstrap Supabase
 
-Open **Supabase Dashboard → SQL Editor**, paste the complete contents of [`docs/sql/001_init.sql`](docs/sql/001_init.sql), and run it once. The migration is idempotent and creates:
+For a new project, open **Supabase Dashboard → SQL Editor**, paste the complete contents of [`docs/sql/001_init.sql`](docs/sql/001_init.sql), and run it once. For an existing Locknote project, run [`docs/sql/002_harden_drafts_rls.sql`](docs/sql/002_harden_drafts_rls.sql) afterwards. These migrations are idempotent and create or harden:
 
 - `public.pastes` for encrypted note envelopes;
-- `public.drafts` for short-lived collaboration rooms and Realtime publication;
+- `public.drafts` for short-lived collaboration rooms, with database access restricted to the server-side API while Realtime Broadcast and Presence handle ephemeral collaboration;
 - `public.events` for privacy-safe lifecycle audit events;
 - the public `secrets` bucket for **encrypted** file blobs only; and
 - recurring database cleanup for expired notes and old drafts.
@@ -241,7 +241,7 @@ npm run test
 npm run test:live
 ```
 
-The smoke test checks the health endpoint, encrypted-note creation, safe metadata responses, owner preview, burn-after-read behavior, delivery receipts, draft sealing, and remote withdrawal.
+The smoke test checks the health endpoint, encrypted-note creation, safe metadata responses, owner preview, burn-after-read behavior, delivery receipts, draft sealing, and remote withdrawal. Before releasing, confirm that `GET /api/health` reports `ok: true` and `store: "supabase"`; a local `memory` store or an unhealthy response is not production-ready.
 
 ## Available scripts
 
@@ -278,7 +278,8 @@ Before sharing a production URL, test these user journeys manually:
 | [Security and threat model](docs/SECURITY.md) | Cryptographic protocol details and residual risks. |
 | [API reference](docs/API.md) | API operations, payloads, and lifecycle behavior. |
 | [Testing guide](docs/TESTING.md) | Test coverage and verification guidance. |
-| [Supabase bootstrap migration](docs/sql/001_init.sql) | Database, Storage, Realtime, RLS, and cleanup setup. |
+| [Supabase bootstrap migration](docs/sql/001_init.sql) | Database, Storage, Realtime, RLS, and cleanup setup for new projects. |
+| [Supabase RLS hardening migration](docs/sql/002_harden_drafts_rls.sql) | Removes legacy anonymous direct access to collaboration drafts. |
 
 ## License
 

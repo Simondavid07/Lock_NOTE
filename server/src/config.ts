@@ -22,11 +22,35 @@ export const env = {
     .filter(Boolean),
 } as const
 
+/**
+ * Locknote talks to a Supabase project API origin, never the Supabase Studio
+ * dashboard. Keeping this check explicit prevents a dashboard URL from making
+ * a deployment look configured while every storage request actually fails.
+ */
+export function isSupabaseProjectUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      /^[a-z0-9-]+\.supabase\.co$/i.test(url.hostname) &&
+      (url.pathname === '' || url.pathname === '/') &&
+      !url.search &&
+      !url.hash
+    )
+  } catch {
+    return false
+  }
+}
+
+export function getSupabaseConfigurationError(): string | null {
+  if (!env.supabaseUrl) return 'SUPABASE_URL is not set.'
+  if (!isSupabaseProjectUrl(env.supabaseUrl)) {
+    return 'SUPABASE_URL must be the project API origin, for example https://your-project-ref.supabase.co. Do not use a Supabase dashboard URL.'
+  }
+  if (!env.supabaseServiceKey) return 'SUPABASE_SERVICE_ROLE_KEY is not set.'
+  return null
+}
+
 export function isSupabaseConfigured(): boolean {
-  return Boolean(
-    env.supabaseUrl &&
-      env.supabaseServiceKey &&
-      env.supabaseUrl.startsWith('http') &&
-      !env.supabaseUrl.includes('xxxx.supabase.co'),
-  )
+  return getSupabaseConfigurationError() === null
 }
