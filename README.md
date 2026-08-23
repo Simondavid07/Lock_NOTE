@@ -109,8 +109,8 @@ npm --version
 ### 1. Install dependencies
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/LockNote_pro.git
-cd LockNote_pro
+git clone https://github.com/Simondavid07/Lock_NOTE.git
+cd Lock_NOTE
 npm install
 ```
 
