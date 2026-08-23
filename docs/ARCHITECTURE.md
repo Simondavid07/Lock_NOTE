@@ -1,103 +1,145 @@
-# 📐 Locknote Architecture
+# Lock Note Architecture
 
-Locknote is designed around a strict **Zero-Knowledge Invariant**: the backend server stores and manages ciphertext blobs and metadata, but never receives, generates, logs, or stores decryption keys.
+## Architectural objective
 
----
+Lock Note separates three concerns that are commonly conflated in secret-sharing tools:
 
-## High-Level System Architecture
+1. **Confidentiality** is provided by browser-side cryptography.
+2. **Lifecycle enforcement** is provided by the API and database state machine.
+3. **Availability and operations** are provided by Supabase and Vercel.
+
+The central invariant is that the backend may store, route, delete, and account for an encrypted envelope, but it does not receive the browser-held decryption key from a normal share link.
+
+## System overview
 
 ```mermaid
-flowchart TD
-    subgraph Browser ["Browser (React 19 + Vite)"]
-        UI["UI Layer / Motion"]
-        Crypto["Web Crypto API (AES-256-GCM / PBKDF2 / HKDF)"]
-        CM["CodeMirror 6 / Shiki"]
-    end
-
-    subgraph Server ["Express 5 API Server (Port 3001)"]
-        AuthZ["Zod Validation & Rate Limiter"]
-        StoreIf["PasteStore Interface"]
-    end
-
-    subgraph Supabase ["Supabase Backend"]
-        PG[(Postgres Database)]
-        Storage[(Storage Bucket: secrets)]
-        Realtime["Realtime Engine (Presence & Cursors)"]
-    end
-
-    UI --> Crypto
-    Crypto -->|Encrypted Ciphertext Only| AuthZ
-    AuthZ --> StoreIf
-    StoreIf --> PG
-    StoreIf --> Storage
-    UI <-->|WebSocket Cursors & Presence| Realtime
+flowchart LR
+    Sender[Sender browser\nReact + Web Crypto] -->|ciphertext, IV, salt, public metadata| API[Lock Note API\nExpress on Vercel]
+    Sender -->|fragment-keyed share URL| Recipient[Recipient browser\nReact + Web Crypto]
+    Recipient -->|paste id and optional owner capability| API
+    API --> Store[Store abstraction]
+    Store --> DB[(Supabase Postgres)]
+    Store --> Files[(Supabase Storage\nencrypted file blobs)]
+    Sender <-->|presence and draft signals| RT[Supabase Realtime]
+    Recipient <-->|presence and draft signals| RT
+    Auth[Supabase Auth\nGitHub and email sessions] --> Sender
+    Cron[Vercel Cron] --> Purge[Protected maintenance function]
+    Purge --> Store
 ```
 
----
+| Boundary | Technology | Responsibility |
+| --- | --- | --- |
+| Browser client | React 19, TypeScript, Vite, Web Crypto API | Collects note content, derives encryption keys, encrypts/decrypts locally, manages share fragments, renders UX, and hosts Auth/Reatime client integration. |
+| API | Express 5, Zod, Helmet, rate limiting | Validates requests, performs lifecycle transitions, verifies owner capabilities, emits safe receipts, deletes encrypted objects, and exposes health state. |
+| Persistence | Supabase Postgres and Storage | Holds ciphertext envelopes, encrypted file blobs, lifecycle metadata, draft records, and privacy-safe events. |
+| Identity and collaboration | Supabase Auth and Realtime | Manages GitHub/email sessions and temporary pre-seal presence/broadcast collaboration. |
+| Deployment | Vercel | Serves the Vite app, hosts `/api` functions, applies production variables, and invokes protected maintenance. |
 
-## Zero-Knowledge Encryption Sequence
+## Encryption and sharing flow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Alice as Sender (Browser)
-    participant Server as Express API
-    participant DB as Supabase DB
-    actor Bob as Recipient (Browser)
+    actor Sender
+    participant Browser as Sender Browser
+    participant API as Lock Note API
+    participant DB as Supabase
+    actor Recipient
+    participant RBrowser as Recipient Browser
 
-    Alice->>Alice: 1. Generate 32-byte Master Secret S
-    Alice->>Alice: 2. Derive Key K = HKDF-SHA256(S, Salt) [or PBKDF2 if passphrase]
-    Alice->>Alice: 3. C = AES-256-GCM(K, Payload, AAD=ID|locknote/v1)
-    Alice->>Server: 4. POST /api/pastes (Ciphertext C, Salt, IV, Metadata)
-    Server->>DB: 5. Store Ciphertext & Public Metadata
-    Server-->>Alice: 6. Return Paste ID & Owner Token
-    Alice->>Bob: 7. Share URL (https://locknote.app/paste/ID#k=S)
-
-    Note over Bob: Hash fragment #k=S is NEVER sent to server over HTTP
-    Bob->>Server: 8. GET /api/pastes/ID (Metadata) & POST /consume
-    Server-->>Bob: 9. Return Ciphertext C, Salt, IV
-    Bob->>Bob: 10. Extract S from #k=S
-    Bob->>Bob: 11. Derive Key K and Decrypt C locally
+    Sender->>Browser: Enter note, file, policy, optional passphrase
+    Browser->>Browser: Generate secret, salt, IV and derive AES-256-GCM key
+    Browser->>Browser: Encrypt payload and bind AAD to paste ID + protocol version
+    Browser->>API: Create encrypted envelope (ciphertext + public metadata)
+    API->>DB: Persist encrypted envelope and lifecycle state
+    DB-->>API: Paste ID and owner capability
+    API-->>Browser: Paste ID and owner capability
+    Browser-->>Sender: Share URL with key after # fragment
+    Sender-->>Recipient: Deliver full share URL through a trusted channel
+    Recipient->>RBrowser: Open full share URL
+    RBrowser->>API: Fetch encrypted envelope by paste ID
+    API-->>RBrowser: Ciphertext, salt, IV, and safe metadata
+    RBrowser->>RBrowser: Read fragment, derive key, verify AAD, decrypt locally
 ```
 
----
+### Why the URL fragment matters
 
-## Database Schema (Postgres)
+The share URL has the general form:
 
-### `pastes` Table
-- `id`: `text primary key` (Client-generated or server fallback)
-- `ciphertext`: `text` (Base64url AES-256-GCM payload)
-- `salt`: `text` (Public Base64url KDF salt)
-- `iv`: `text` (Public Base64url AES IV)
-- `iterations`: `integer` (600,000 for PBKDF2, 0 for HKDF)
-- `kdf`: `text` (`hkdf` | `pbkdf2`)
-- `alg`: `text` (`aes-256-gcm`)
-- `format`: `text` (`text` | `markdown` | `code` | `credentials` | `file`)
-- `language`: `text` (Optional syntax language)
-- `burn_after_read`: `boolean`
-- `dead_switch_days`: `integer`
-- `storage_path`: `text` (Path in Supabase Storage for files)
-- `file_meta`: `jsonb` (`{ size, iv }`)
-- `created_at`: `bigint` (Epoch milliseconds)
-- `expires_at`: `bigint` (Epoch milliseconds or null)
-- `view_count`: `integer`
-- `first_viewed_at`: `bigint`
-- `last_viewed_at`: `bigint`
-- `owner_token`: `text` (Constant-time compared capability token)
-- `burned`: `boolean`
+```text
+https://YOUR_DOMAIN/paste/PASTE_ID#DECRYPTION_MATERIAL
+```
 
-### `drafts` Table (Ephemeral Collaboration)
-- `room_id`: `text primary key`
-- `content`: `text`
-- `created_at`: `bigint`
-- `updated_at`: `bigint`
-- `owner_token`: `text`
+The fragment is processed by the browser and is not included in normal HTTP requests. The recipient API request therefore identifies the encrypted envelope by `PASTE_ID`, while key material remains client-side. The sender is still responsible for sharing the entire URL through an appropriate channel.
 
----
+## Cryptographic model
 
-## Purge & Cleanup Engine (Janitor)
+| Element | Design | Purpose |
+| --- | --- | --- |
+| Content cipher | AES-256-GCM | Confidentiality and authenticated decryption. |
+| Key derivation | HKDF-SHA-256 for generated secrets; PBKDF2 for optional passphrase flows | Derives encryption keys without sending the final key to the API. |
+| Key derivation hardness | PBKDF2 uses 600,000 iterations | Raises the cost of passphrase guessing. |
+| Additional authenticated data | Paste ID and protocol domain separator | Detects ciphertext or envelope substitution between note identifiers. |
+| Per-note randomness | Fresh secret material, salt, and IV | Prevents deterministic encryption output across notes. |
+| File handling | File is encrypted before Supabase Storage upload | Keeps Storage objects as encrypted blobs rather than plaintext attachments. |
 
-The server runs an automated background janitor every 60 seconds to purge expired secrets and dead-switch triggered pastes:
-1. **Time Expiration**: `expires_at <= current_timestamp`
-2. **Dead-Switch Inactivity**: `now - max(last_viewed_at, created_at) > dead_switch_days * 86400000`
-3. **Draft Cleanup**: Ephemeral rooms older than 24 hours are removed automatically.
+The detailed trust model, threat scenarios, and limitations are documented in [SECURITY.md](SECURITY.md).
+
+## Data model and lifecycle
+
+| Entity | Contains | Does not contain |
+| --- | --- | --- |
+| `pastes` | Ciphertext, IV, public salt, format metadata, expiry/dead-switch policy, encrypted-file path, view metadata, owner capability, burned state | Plaintext note content or a fragment-derived decryption key. |
+| `events` | Minimal lifecycle and receipt signals | Plaintext content. |
+| `drafts` | Short-lived pre-seal collaboration state | Sealed note key material. |
+| `secrets` Storage bucket | Encrypted file ciphertext | Plaintext file data or a decryption key. |
+
+The API treats a paste as a lifecycle state machine. It may be active, expired, burned after a successful recipient consume, or withdrawn by its owner capability. Owner preview is explicitly differentiated from recipient consume so the sender can inspect the note without accidentally burning it.
+
+## Collaboration trust boundary
+
+Realtime collaboration is intentionally **pre-seal**. Presence and broadcast signals can support collaborative drafting, but collaborative draft content is not represented as a zero-knowledge encrypted co-editing protocol. Once the owner seals the result, the generated Lock Note envelope follows the browser-side encryption model described above.
+
+This distinction is visible in the product documentation because it prevents a reviewer or user from assuming that realtime drafting has the same confidentiality properties as a sealed note.
+
+## Production deployment behavior
+
+### Vercel routing
+
+The Vercel project serves one deployment:
+
+| Route type | Destination |
+| --- | --- |
+| Static application routes | Vite `client/dist` output, with SPA fallback for deep links. |
+| `/api` | Express Vercel function root entry point. |
+| `/api/*` | Explicit catch-all rewrite to the Express Vercel function. |
+| `/api/maintenance/purge` | Protected daily maintenance function. |
+
+The explicit nested API rewrite is important: it ensures endpoints such as `/api/pastes/:id`, receipts, drafts, and owner lifecycle operations reach Express instead of Vercel returning a platform `NOT_FOUND` response.
+
+### Runtime safeguards
+
+Production initialization validates the Supabase project URL and required server credentials before enabling the Supabase store. If configuration is invalid, the API reports a controlled service-unavailable response instead of silently presenting an ephemeral in-memory store as durable production persistence.
+
+The public health endpoint reports the active store. A production-ready response should identify `store: "supabase"` and `ok: true`.
+
+### Maintenance
+
+Vercel Cron invokes the protected maintenance endpoint once per day. The endpoint verifies `CRON_SECRET` and performs an idempotent cleanup pass for expired notes, inactive drafts, and orphaned encrypted files. Application requests also enforce lifecycle checks when reading or mutating a record, so expiration does not depend solely on the scheduled job.
+
+## Repository map
+
+```text
+Lock_NOTE/
+├── client/                    React 19 + Vite application
+│   └── src/                   UI, browser crypto, routes, auth, collaboration
+├── server/                    Express API, stores, validation, tests, smoke test
+│   └── src/
+├── api/                       Vercel function entry points and maintenance function
+├── docs/                      Evaluation, demo, architecture, security, API, testing
+│   └── sql/                   Supabase bootstrap and RLS hardening migrations
+├── .env.example               Safe local environment template
+├── .env.submission.template   Copyable private-submission template
+├── vercel.json                Build, rewrites, headers, and cron configuration
+└── README.md                  Primary reviewer entry point
+```

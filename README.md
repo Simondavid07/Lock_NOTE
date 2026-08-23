@@ -9,6 +9,21 @@ Locknote is a zero-knowledge, self-destructing note-sharing application. It encr
 [![Supabase](https://img.shields.io/badge/supabase-persistence%20%2B%20auth-3FCF8E?logo=supabase&logoColor=white)](https://supabase.com/)
 [![Vercel](https://img.shields.io/badge/vercel-ready-000000?logo=vercel&logoColor=white)](https://vercel.com/)
 
+## Evaluation at a glance
+
+Locknote is documented and tested as a complete submission rather than a visual prototype. The material below maps directly to the evaluation criteria.
+
+| Evaluation criterion | Review-ready evidence |
+| --- | --- |
+| **Problem Understanding & Core Functionality** | Browser-side encryption, fragment-keyed sharing, burn-on-read, expiry, remote withdrawal, encrypted files, and delivery receipts. |
+| **Innovation & Meaningful Differentiation** | Dead switches, seal fingerprints, passphrase gates, encrypted file envelopes, and pre-seal realtime collaboration. |
+| **Technical Implementation & Architecture** | React/Vite client, Web Crypto API, Express/Zod/Helmet API, Supabase services, Vercel functions, RLS migrations, and typed tests. |
+| **User Experience & Accessibility** | Intentional compose-to-share workflow, theme support, keyboard command palette, semantic controls, responsive views, and actionable errors. |
+| **Performance & Reliability / Demo Quality** | Health endpoint, validation, rate limits, protected maintenance, production smoke test, and automated checks. |
+| **Documentation & Explanation** | This README plus dedicated evaluation, demo, architecture, security, API, testing, comparison, and environment guides. |
+
+> Start with the **[Evaluation Guide](docs/EVALUATION.md)** for a rubric-by-rubric explanation, then use **[DEMO.md](docs/DEMO.md)** for a repeatable evaluator walkthrough.
+
 ## Interface
 
 <p align="center">
@@ -27,6 +42,8 @@ Locknote is a zero-knowledge, self-destructing note-sharing application. It encr
 | --- | --- |
 | Live application | `https://lock-note-sigma.vercel.app/` |
 | Video walkthrough | **Add your video link here:** `https://YOUR-DEMO-VIDEO-URL` |
+| Evaluator demo script | [docs/DEMO.md](docs/DEMO.md) |
+| Rubric evidence guide | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Local application | `http://localhost:5173` |
 | Local API health check | `http://localhost:3001/api/health` |
 
@@ -90,10 +107,27 @@ locknote/
 ├── server/                      # Express API and storage abstractions
 ├── docs/
 │   ├── assets/                  # README screenshots
-│   └── sql/001_init.sql         # Supabase bootstrap migration
+│   ├── EVALUATION.md            # rubric-aligned evaluator evidence
+│   ├── DEMO.md                  # three-to-five-minute walkthrough
+│   ├── ENVIRONMENT.md           # local, Vercel, OAuth, and submission setup
+│   └── sql/                     # Supabase bootstrap and RLS hardening migrations
 ├── vercel.json                  # Vite output, SPA routing, headers, cron
-└── .env.example                 # safe configuration template
+├── .env.example                 # safe local configuration template
+└── .env.submission.template     # copyable private-submission template
 ```
+
+## Submission readiness
+
+The repository is ready for code review and a live evaluation. Before submitting, replace the optional video placeholder above, confirm the live link opens, and follow the **[submission checklist](docs/ENVIRONMENT.md#submission-rules)** for private environment values.
+
+| Submission item | Repository location |
+| --- | --- |
+| Rubric-by-rubric explanation | [docs/EVALUATION.md](docs/EVALUATION.md) |
+| Three-to-five-minute demo script | [docs/DEMO.md](docs/DEMO.md) |
+| Architecture and trust boundary | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SECURITY.md](docs/SECURITY.md) |
+| API and test evidence | [docs/API.md](docs/API.md) and [docs/TESTING.md](docs/TESTING.md) |
+| Safe environment templates | [.env.example](.env.example) and [.env.submission.template](.env.submission.template) |
+| Live deployment | <https://lock-note-sigma.vercel.app/> |
 
 ## Local setup
 
@@ -274,6 +308,11 @@ Before sharing a production URL, test these user journeys manually:
 
 | Document | Purpose |
 | --- | --- |
+| [Documentation index](docs/README.md) | Quick map of every evaluator and implementation document. |
+| [Evaluation guide](docs/EVALUATION.md) | Rubric-aligned evidence for problem fit, innovation, architecture, UX, reliability, and documentation. |
+| [Demo guide](docs/DEMO.md) | A concise evaluator walkthrough and troubleshooting sequence. |
+| [Environment guide](docs/ENVIRONMENT.md) | Safe local, Vercel, OAuth, and submission configuration instructions. |
+| [Submission checklist](docs/SUBMISSION_CHECKLIST.md) | Final reviewer, deployment, and secret-safety checks before handoff. |
 | [Architecture guide](docs/ARCHITECTURE.md) | Service boundaries, data flow, and component overview. |
 | [Security and threat model](docs/SECURITY.md) | Cryptographic protocol details and residual risks. |
 | [API reference](docs/API.md) | API operations, payloads, and lifecycle behavior. |
