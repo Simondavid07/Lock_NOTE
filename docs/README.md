@@ -13,9 +13,10 @@ This directory contains the project documentation used for implementation, deplo
 | [ENVIRONMENT.md](ENVIRONMENT.md) | Configure local development, Vercel, Supabase, GitHub OAuth, and a private submission environment file. |
 | [SUBMISSION_CHECKLIST.md](SUBMISSION_CHECKLIST.md) | Verify repository presentation, quality gates, deployment access, and secret-safe evaluator handoff. |
 | [COMPARISON.md](COMPARISON.md) | See the project’s meaningful differentiation from a classic pastebin workflow. |
-| [FEATURES.md](FEATURES.md) | Take a visual tour of GitHub identity, browser-local vault management, QR delivery, fingerprints, and sender controls. |
+| [FEATURES.md](FEATURES.md) | Take a visual tour of GitHub identity, owner-only account metadata, browser-local capability vault management, QR delivery, fingerprints, and sender controls. |
 | [sql/001_init.sql](sql/001_init.sql) | Bootstrap a new Supabase project. |
 | [sql/002_harden_drafts_rls.sql](sql/002_harden_drafts_rls.sql) | Apply draft access hardening to an existing Lock Note installation. |
+| [sql/003_profiles_and_contacts.sql](sql/003_profiles_and_contacts.sql) | Add owner-only profile/contact metadata tables with an explicit no-secrets data contract. |
 
 ## Suggested evaluation reading order
 

@@ -21,7 +21,7 @@ export function Footer() {
             Reference: PrivateBin
           </a>
           <span aria-hidden className="text-zinc-300 dark:text-zinc-700">·</span>
-          <span className="rounded-full border border-lilac-deep/15 bg-white/35 px-2 py-0.5 font-mono text-[10px] font-semibold opacity-85 dark:bg-white/5">AES-256-GCM · PBKDF2 600k</span>
+          <span className="rounded-full border border-lilac-deep/20 bg-white/70 px-2 py-0.5 font-mono text-[10px] font-semibold text-zinc-700 dark:bg-white/10 dark:text-zinc-200">AES-256-GCM · PBKDF2 600k</span>
         </nav>
       </div>
     </footer>

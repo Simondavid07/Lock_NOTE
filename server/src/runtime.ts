@@ -25,6 +25,7 @@ export interface LocknoteRuntime {
  * in ephemeral function memory.
  */
 export function createLocknoteRuntime(options: { requireSupabase?: boolean } = {}): LocknoteRuntime {
+  const buildVersion = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || 'local'
   const supabaseReady = isSupabaseConfigured()
   const productionLike = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1'
   const configError = getSupabaseConfigurationError()
@@ -48,7 +49,7 @@ export function createLocknoteRuntime(options: { requireSupabase?: boolean } = {
     }
 
     return {
-      app: createApp({ ...backend, corsOrigins: env.corsOrigins }),
+      app: createApp({ ...backend, corsOrigins: env.corsOrigins, buildVersion }),
       backend,
       persistence: 'supabase',
     }
@@ -63,7 +64,7 @@ export function createLocknoteRuntime(options: { requireSupabase?: boolean } = {
   }
 
   return {
-    app: createApp({ ...backend, corsOrigins: env.corsOrigins }),
+    app: createApp({ ...backend, corsOrigins: env.corsOrigins, buildVersion }),
     backend,
     persistence: 'memory',
   }

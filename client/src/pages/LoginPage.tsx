@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import { Button, Card, TextInput } from '../components/ui'
@@ -7,6 +7,10 @@ import { getSupabaseConfigurationError, signInWithGithub, supabase } from '../li
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const requestedPath = typeof location.state?.from === 'string' && location.state.from.startsWith('/') && !location.state.from.startsWith('//')
+    ? location.state.from
+    : '/dashboard'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -15,7 +19,7 @@ export function LoginPage() {
   async function handleGithubAuth() {
     try {
       setLoading(true)
-      await signInWithGithub()
+      await signInWithGithub(requestedPath)
     } catch (err) {
       console.error(err)
       toast.error(err instanceof Error ? err.message : 'GitHub authentication failed — try email login')
@@ -32,9 +36,7 @@ export function LoginPage() {
         toast.error(configurationError)
         return
       }
-      localStorage.setItem('locknote:demo_user', JSON.stringify({ email, name: email.split('@')[0] }))
-      toast.success('Welcome to your private library')
-      navigate('/dashboard')
+      toast.error('Secure sign-in is unavailable until Supabase is configured.')
       return
     }
 
@@ -48,7 +50,7 @@ export function LoginPage() {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
         toast.success('Welcome back.')
-        navigate('/dashboard')
+        navigate(requestedPath, { replace: true })
       }
     } catch (err: any) {
       toast.error(err.message || 'Authentication failed')

@@ -53,13 +53,13 @@ Create a passphrase-protected note or attach a small non-sensitive file.
 
 If time allows, show the collaboration entry point and say clearly that drafts are a temporary pre-seal workspace rather than end-to-end encrypted co-editing.
 
-### 6. GitHub identity, personal profile, and browser-local vault — 40 seconds
+### 6. GitHub identity, private account profile, and browser-local vault — 40 seconds
 
 Select **Continue with GitHub**, complete sign-in if necessary, and open the profile/dashboard.
 
-> “GitHub authentication is handled through Supabase Auth. The profile shows the verified provider identity, avatar, username, and email. The custom bio and visual contact list are local personalization features, while the vault manages the links created in this browser.”
+> “GitHub authentication is handled through Supabase Auth. The profile shows the verified provider identity, avatar, username, and email. The optional bio and private contact shortcuts are stored in owner-only Supabase rows, while the vault manages capability-bearing links created in this browser.”
 
-Point out the editable research bio, the View Vault action, the sealed/active link statistics, and the contacts interface. Explain the privacy boundary: the dashboard is not a server-side plaintext note archive, contacts do not grant a user decryption access, and the current personalization settings are browser-local.
+Point out the editable research bio, the View Vault action, the sealed/active link statistics, and the contacts interface. Explain the privacy boundary: the dashboard is not a server-side plaintext note archive; contacts do not grant a user decryption access; and the profile/contact tables never contain note content, share URLs, URL fragments, owner tokens, passphrases, or keys.
 
 For a visual reference, see the GitHub-authenticated profile screenshot in [FEATURES.md](FEATURES.md#github-authenticated-personal-profile-and-vault).
 
@@ -71,9 +71,9 @@ Show the health endpoint or run the live smoke test:
 API_URL=https://lock-note-sigma.vercel.app npm run test:live
 ```
 
-The expected passing output covers health, note creation, safe metadata, owner preview, burn-after-read, receipts, draft sealing, and remote wipe.
+The expected passing output covers health, note creation, safe metadata, owner preview, burn-after-read, receipts, draft sealing, and remote wipe. Point out the `version`, `X-Request-ID`, and `Server-Timing` fields as safe operational evidence.
 
-> “This is not a visual-only demo. The repository includes type checks, build validation, unit/integration tests, and a live lifecycle test against the deployed Supabase-backed API.”
+> “This is not a visual-only demo. The repository includes type checks, build validation, unit/integration tests, an automated axe/keyboard suite, a JavaScript bundle budget, pull-request CI, static security-header verification, and a live lifecycle test against the deployed Supabase-backed API.”
 
 ## Evaluation talking points
 
@@ -81,11 +81,11 @@ The expected passing output covers health, note creation, safe metadata, owner p
 | --- | --- |
 | Problem and functionality | “It solves temporary sensitive sharing with browser-side encryption, one-time delivery, expiry, and sender withdrawal.” |
 | Innovation | “It combines fragment-keyed decryption, authenticated encryption, encrypted files, dead switches, seal fingerprints, and pre-seal collaboration.” |
-| Architecture | “React/Vite performs cryptography in-browser; an Express API manages lifecycle state; Supabase stores encrypted records; Vercel hosts the deployed system.” |
-| UX and accessibility | “The app uses clear workflow states, keyboard-accessible controls, theme support, actionable errors, and a focused compose-to-share journey.” |
-| Reliability | “A real readiness endpoint, rate limits, protected maintenance, test suites, and a live production smoke test make the demo repeatable.” |
+| Architecture | “React/Vite performs cryptography in-browser; an Express API manages lifecycle state and redacted telemetry; Supabase stores encrypted records plus owner-only account metadata; Vercel hosts the deployed system with a static CSP.” |
+| UX and accessibility | “The app uses clear workflow states, session-aware private routes, keyboard-accessible controls, a skip link, theme support, actionable errors, and automated axe checks.” |
+| Reliability | “A versioned readiness endpoint, request IDs, safe timing, rate limits, protected maintenance, test suites, CI, bundle budgets, static-header checks, and live production smoke make the demo repeatable.” |
 | Documentation | “The README is supported by dedicated evaluation, feature, demo, architecture, security, API, testing, environment, and deployment documents.” |
-| Personalized product proof | “The GitHub-authenticated profile, browser-local vault, QR delivery card, and seal fingerprint make the secure-sharing journey visible to reviewers.” |
+| Personalized product proof | “The GitHub-authenticated private profile, owner-only contact shortcuts, browser-local capability vault, QR delivery card, and seal fingerprint make the secure-sharing journey visible to reviewers.” |
 
 ## Troubleshooting during a demo
 

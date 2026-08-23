@@ -18,14 +18,19 @@
     "dev:client": "npm run dev -w client",
     "build": "npm run build -w server && npm run build -w client",
     "start": "npm run start -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w client && tsc --noEmit -p tsconfig.vercel.json",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client && tsc --noEmit -p tsconfig.vercel.json && tsc --noEmit -p e2e/tsconfig.json",
     "lint": "npm run lint -w server && npm run lint -w client",
     "test": "npm run test -w server && npm run test -w client",
     "test:live": "npm run test:live -w server",
     "test:e2e": "npm run test:e2e -w e2e",
+    "test:accessibility": "npm run test:e2e -w e2e -- accessibility.spec.ts",
+    "test:bundle": "node scripts/check-bundle-size.mjs",
+    "test:headers": "node scripts/check-production-headers.mjs",
     "demo": "npm run demo -w server"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
     "concurrently": "^9.1.2"
   },
   "dependencies": {

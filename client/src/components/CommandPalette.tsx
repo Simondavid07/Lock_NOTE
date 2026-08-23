@@ -117,7 +117,10 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'ArrowDown') {
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    onOpenChange(false)
+                  } else if (e.key === 'ArrowDown') {
                     e.preventDefault()
                     setActive((a) => Math.min(a + 1, commands.length - 1))
                   } else if (e.key === 'ArrowUp') {

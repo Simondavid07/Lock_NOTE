@@ -2,7 +2,9 @@ import { useEffect, lazy, Suspense } from 'react'
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import { toast } from 'sonner'
-import { cacheAuthenticatedUser, supabase } from './lib/supabase'
+import { supabase, takeAuthReturnPath, toAuthenticatedUser } from './lib/supabase'
+import { AuthProvider } from './lib/auth'
+import { RequireAuth } from './components/RequireAuth'
 import { ViewPage } from './pages/ViewPage'
 import { AboutPage } from './pages/AboutPage'
 import { NotFoundPage } from './pages/NotFoundPage'
@@ -57,21 +59,18 @@ export default function App() {
         return
       }
 
-      const user = cacheAuthenticatedUser(data.user)
+      const user = toAuthenticatedUser(data.user)
       toast.success(`Welcome, @${user?.username ?? 'there'}.`, { id: 'gh-auth' })
-      navigate('/dashboard', { replace: true })
+      navigate(takeAuthReturnPath(), { replace: true })
     }
 
     void completeOAuthCallback()
-    const { data: listener } = supabaseClient.auth.onAuthStateChange((_event, session) => {
-      cacheAuthenticatedUser(session?.user ?? null)
-    })
-
-    return () => listener.subscription.unsubscribe()
   }, [location.pathname, location.search, navigate])
 
   return (
-    <div className="vault-shell relative min-h-screen bg-ivory text-zinc-900 dark:bg-void dark:text-zinc-100 transition-colors duration-500">
+    <AuthProvider>
+      <div className="vault-shell relative min-h-screen bg-ivory text-zinc-900 dark:bg-void dark:text-zinc-100 transition-colors duration-500">
+      <a href="#main-content" className="sr-only fixed left-4 top-4 z-[100] rounded-lg bg-white px-4 py-2 text-sm font-bold text-zinc-900 shadow-lg focus:not-sr-only dark:bg-void-card dark:text-zinc-100">Skip to main content</a>
       <VaultBackdrop />
       <CustomCursor />
 
@@ -86,7 +85,9 @@ export default function App() {
             animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
             exit={{ opacity: 0, y: reduceMotion ? 0 : -8, filter: reduceMotion ? 'blur(0px)' : 'blur(2px)' }}
             transition={{ duration: reduceMotion ? 0.01 : 0.48, ease: [0.22, 1, 0.36, 1] }}
-            className="mx-auto w-full max-w-6xl flex-1 px-4 pb-24 sm:px-6"
+              id="main-content"
+              tabIndex={-1}
+              className="mx-auto w-full max-w-6xl flex-1 px-4 pb-24 sm:px-6 focus:outline-none"
           >
             <Suspense
               fallback={
@@ -98,8 +99,8 @@ export default function App() {
             >
               <Routes location={location}>
                 <Route path="/" element={<CreatePage />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
+                <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/auth/callback" element={<div className="flex min-h-[40vh] items-center justify-center font-mono text-xs tracking-[0.12em] text-zinc-500">COMPLETING SECURE SIGN-IN</div>} />
                 <Route path="/paste/:id" element={<ViewPage />} />
@@ -115,6 +116,7 @@ export default function App() {
           How it works
         </Link>
       </div>
-    </div>
+      </div>
+    </AuthProvider>
   )
 }

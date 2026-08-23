@@ -46,7 +46,6 @@ export default defineConfig({
             '@lezer/yaml',
             '@lezer/cpp',
           ],
-          supabase: ['@supabase/supabase-js'],
           markdown: ['marked', 'dompurify'],
         },
       },

@@ -10,8 +10,10 @@ Lock Note is evaluated as a privacy-sensitive lifecycle system, not only a visua
 | Server integration tests | Request validation, lifecycle logic, rate limits, and store contracts | Vitest + Supertest | `npm run test -w server` |
 | Type checking | Type safety across React, Express, and Vercel entry points | TypeScript | `npm run typecheck` |
 | Production build | Vite client and server artifact generation | npm workspaces | `npm run build` |
+| Browser accessibility and keyboard flow | Public routes, serious/critical axe violations, command palette, and skip-link behavior | Playwright + axe-core | `npm run test:accessibility` |
+| Bundle budget | Largest emitted JavaScript chunk remains within the production budget | Node post-build check | `npm run test:bundle` |
+| Static-header smoke | Live CSP and companion static headers remain present | Node fetch check | `npm run test:headers` |
 | Live lifecycle smoke test | Real deployed API and Supabase behavior | Node/TypeScript smoke script | `API_URL=... npm run test:live` |
-| Optional browser E2E | Browser-level compose, share, read, and burn journey | Playwright | `npm run test:e2e` |
 
 ## What is verified
 
@@ -56,6 +58,12 @@ npm run build
 # Run unit and integration tests
 npm run test
 
+# Enforce the largest emitted JavaScript-chunk budget
+npm run test:bundle
+
+# Exercise public routes with axe and keyboard navigation
+npm run test:accessibility
+
 # Audit production dependencies for high-severity findings
 npm audit --omit=dev --audit-level=high
 ```
@@ -84,6 +92,17 @@ The smoke test confirms all of the following against the real deployed service:
 
 A passing run provides meaningful reliability evidence because it exercises the same Vercel routing, environment configuration, API functions, and Supabase persistence used in the live evaluator demo.
 
+## Automated quality gates
+
+The repository defines two workflows under `.github/workflows/`.
+
+| Workflow | Trigger | Evidence enforced |
+| --- | --- | --- |
+| `Quality gate` | Pull requests and pushes to `main` | TypeScript, unit/integration tests, production build, JavaScript bundle budget, production dependency audit, Chromium accessibility audit, keyboard-flow test, and failure artifacts. |
+| `Production smoke` | Daily schedule and manual dispatch | Real deployed zero-knowledge lifecycle smoke test plus static CSP/header verification against the public Vercel URL. |
+
+The browser suite waits for intentional entrance animations to settle, then fails if axe reports a serious or critical issue on `/`, `/login`, or `/how-it-works`. It also verifies command-palette Escape behavior and the visible-on-focus skip link. The API observability test verifies generated or accepted request IDs, `Server-Timing`, and safe readiness data.
+
 ## Manual acceptance checklist
 
 | Scenario | Expected outcome |
@@ -94,7 +113,10 @@ A passing run provides meaningful reliability evidence because it exercises the 
 | Expiring note | Expired state is shown when the deadline is reached. |
 | Remote withdrawal | Sender can invalidate a non-burned active link with the owner capability. |
 | Encrypted file note | File is retrieved as ciphertext and decrypted only in the recipient browser. |
-| GitHub sign-in | User returns from Supabase Auth to `/auth/callback` and reaches `/dashboard`. |
+| GitHub sign-in | User returns from Supabase Auth to `/auth/callback` and reaches the requested same-origin private route. |
+| Protected route | Visiting `/dashboard` or `/profile` without a Supabase session redirects to `/login` without showing a demo identity. |
+| Account bio | An authenticated user can save an optional ≤160-character bio and see it after refresh. |
+| Private contact | An authenticated user can add/remove a GitHub username; it is private to that account and grants no secret access. |
 | Collaboration draft | Users can enter the pre-seal draft workflow; sealed output becomes a Lock Note envelope. |
 | Direct deep link | Refreshing `/paste/:id` or `/auth/callback` returns the single-page app rather than a host-level 404. |
 
@@ -112,6 +134,9 @@ The production hardening release was validated with the following results:
 | Live lifecycle smoke test | Passed after Supabase RLS hardening. |
 | GitHub OAuth flow | Verified through the production callback and dashboard redirect. |
 | Post-deployment security review | HTTPS, HSTS, API hardening, CORS behavior, source-map access, sensitive-path fallback, and dependency checks passed within scoped automation. |
+| Accessibility regression suite | Passed: axe reported no serious or critical violations on public routes; command palette and skip-link keyboard checks passed. |
+| Bundle budget | Passed: largest emitted JavaScript chunk was 736.7 KiB against an 850 KiB budget. |
+| CI and smoke workflows | Added: pull-request/main quality gate plus a scheduled/manual production lifecycle and static-header smoke workflow. |
 
 ## Troubleshooting a failed check
 

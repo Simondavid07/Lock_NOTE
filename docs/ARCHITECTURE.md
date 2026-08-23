@@ -93,6 +93,8 @@ The detailed trust model, threat scenarios, and limitations are documented in [S
 | `events` | Minimal lifecycle and receipt signals | Plaintext content. |
 | `drafts` | Short-lived pre-seal collaboration state | Sealed note key material. |
 | `secrets` Storage bucket | Encrypted file ciphertext | Plaintext file data or a decryption key. |
+| `profiles` | Opt-in display name, provider username, avatar URL, and a short bio for the authenticated owner | Notes, ciphertext, share URLs, URL fragments, passphrases, owner capabilities, or cryptographic material. |
+| `vault_contacts` | Authenticated owner’s private GitHub username shortcuts | Recipient access grants, collaboration permissions, notes, share URLs, or key material. |
 
 The API treats a paste as a lifecycle state machine. It may be active, expired, burned after a successful recipient consume, or withdrawn by its owner capability. Owner preview is explicitly differentiated from recipient consume so the sender can inspect the note without accidentally burning it.
 
@@ -121,7 +123,19 @@ The explicit nested API rewrite is important: it ensures endpoints such as `/api
 
 Production initialization validates the Supabase project URL and required server credentials before enabling the Supabase store. If configuration is invalid, the API reports a controlled service-unavailable response instead of silently presenting an ephemeral in-memory store as durable production persistence.
 
-The public health endpoint reports the active store. A production-ready response should identify `store: "supabase"` and `ok: true`.
+The public health endpoint reports the active store and a safe build identifier. A production-ready response should identify `store: "supabase"` and `ok: true`.
+
+### Account metadata and route protection
+
+The client restores the Supabase session through `AuthProvider`; `/dashboard` and `/profile` use `RequireAuth` rather than treating a browser cache as proof of identity. The OAuth callback stores a safe local return path in session storage, exchanges the PKCE code, and sends the user back only to a same-origin application route.
+
+The profile screen calls Supabase directly with the browser publishable key and the signed-in user’s JWT. `profiles` and `vault_contacts` are protected by owner-only RLS policies, so no service-role credential is ever bundled to the client. First-time profile initialization stores only provider-derived display metadata and an optional bio. Browser-local tracked paste capabilities deliberately remain outside these account tables because they can include owner tokens and full share URLs.
+
+### Static delivery security and telemetry
+
+`vercel.json` applies an enforced Content Security Policy to static routes, alongside a restrictive Permissions Policy, `nosniff`, frame protection, COOP, CORP, and a strict referrer policy. The CSP explicitly permits only application assets, the required Google Fonts sources, GitHub/DiceBear avatar sources, and Supabase HTTPS/WebSocket connections; changes to those dependencies must be tested before the policy is widened.
+
+Every API response receives an `X-Request-ID` and `Server-Timing` header. Completion logs record only request ID, HTTP method, a normalized route template, status, and duration. Error logs retain only a safe error class. They never include request bodies, ciphertext, plaintext, URL fragments, passphrases, authorization values, owner capabilities, or user-defined route identifiers.
 
 ### Maintenance
 

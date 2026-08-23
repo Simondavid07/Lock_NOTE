@@ -1,0 +1,9 @@
+{
+  "name": "@locknote/e2e",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test"
+  }
+}

@@ -12,7 +12,7 @@ function safeHealthDetail(detail: string | undefined): string | null {
   return normalized ? normalized.slice(0, 240) : null
 }
 
-export function healthRouter(deps: { store: PasteStore; startedAt: number }): Router {
+export function healthRouter(deps: { store: PasteStore; startedAt: number; buildVersion?: string }): Router {
   const router = Router()
 
   router.get('/', async (_req, res) => {
@@ -21,6 +21,7 @@ export function healthRouter(deps: { store: PasteStore; startedAt: number }): Ro
     res.status(ok ? 200 : 503).json({
       ok,
       service: 'locknote-api',
+      version: deps.buildVersion ?? 'local',
       store: deps.store.kind,
       storeDetail: safeHealthDetail(storeHealth.detail),
       uptimeSeconds: Math.round((Date.now() - deps.startedAt) / 1000),

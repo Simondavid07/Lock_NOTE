@@ -103,3 +103,18 @@ Before submitting, confirm these rules:
 | Browser variables | Only `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and optional `VITE_API_BASE` use the `VITE_` prefix. |
 | Vercel | Holds the real `SUPABASE_SERVICE_ROLE_KEY` and `CRON_SECRET` securely. |
 | GitHub OAuth | Client secret appears only in Supabase’s provider configuration, never in the repository. |
+
+## Account metadata migration
+
+After `001_init.sql` and `002_harden_drafts_rls.sql`, apply [`docs/sql/003_profiles_and_contacts.sql`](sql/003_profiles_and_contacts.sql) in the Supabase SQL Editor or through the managed migration workflow. It creates `profiles` and `vault_contacts` with owner-only row-level security. The browser uses the Supabase publishable/anon key together with the signed-in user’s session; it does not require, receive, or expose a service-role key.
+
+| Data category | Permitted in the account tables | Prohibited |
+| --- | --- | --- |
+| `profiles` | Provider-derived display metadata and an optional ≤160-character bio | Plaintext notes, ciphertext, share URLs, fragments, passphrases, decryption material, and owner capabilities. |
+| `vault_contacts` | A private, owner-scoped GitHub username shortcut | Recipient authorization, collaboration permission, notes, keys, or secret links. |
+
+## Release-quality checks
+
+Before a production release, run the standard type, unit/integration, build, and production-dependency checks in [TESTING.md](TESTING.md), then also run `npm run test:bundle` and `npm run test:accessibility`. Confirm the GitHub `Quality gate` workflow is green after pushing. The daily/manual `Production smoke` workflow then verifies the public lifecycle and required static headers against the production alias without needing repository secrets.
+
+The enforced Content Security Policy in `vercel.json` is part of the release boundary. If an integration needs a new external origin, document why it is required, add only its narrowest origin/directive, and re-test GitHub OAuth, Supabase connectivity, avatar rendering, QR rendering, and the public browser suite before deployment.

@@ -19,9 +19,9 @@ Use this checklist immediately before sending the GitHub repository and any priv
 | --- | --- |
 | Problem Understanding & Core Functionality | `README.md`, `docs/EVALUATION.md`, live compose/share/read workflow. |
 | Innovation & Meaningful Differentiation | `docs/COMPARISON.md`, seal fingerprints, passphrase gate, encrypted files, dead switch, and sender controls. |
-| Technical Implementation & Architecture | `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, API/store source, Vercel functions, and SQL migrations. |
-| User Experience & Accessibility | README screenshots, theme support, keyboard command palette, semantic controls, and clear state messages. |
-| Performance & Reliability / Demo Quality | `docs/TESTING.md`, live smoke command, health endpoint, rate limiting, protected maintenance, and Vercel deployment. |
+| Technical Implementation & Architecture | `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, API/store source, Vercel functions, static CSP, and owner-only SQL migrations. |
+| User Experience & Accessibility | README screenshots, theme support, session-aware protected routes, keyboard command palette, skip link, semantic controls, clear state messages, and axe evidence. |
+| Performance & Reliability / Demo Quality | `docs/TESTING.md`, live smoke command, health/version endpoint, request IDs, timing, static-header check, bundle budget, CI, protected maintenance, and Vercel deployment. |
 | Documentation & Explanation | README plus the documentation index and all linked guides. |
 
 ## Quality gates
@@ -33,15 +33,21 @@ npm ci
 npm run typecheck
 npm run build
 npm run test
+npm run test:bundle
+npm run test:accessibility
 npm audit --omit=dev --audit-level=high
 API_URL=https://lock-note-sigma.vercel.app npm run test:live
+npm run test:headers
 ```
 
 | Deployment check | Expected result |
 | --- | --- |
 | `https://lock-note-sigma.vercel.app/` | Live app opens successfully. |
-| `https://lock-note-sigma.vercel.app/api/health` | `ok: true` and `store: "supabase"`. |
-| GitHub sign-in | Returns to `/auth/callback`, then `/dashboard`. |
+| `https://lock-note-sigma.vercel.app/api/health` | `ok: true`, `store: "supabase"`, and a safe `version` value. |
+| GitHub sign-in | Returns through `/auth/callback` to the requested same-origin private route. |
+| Private profile data | `003_profiles_and_contacts.sql` is applied; bio/contact operations work for the authenticated owner only. |
+| Header policy | Production root response includes CSP, Permissions Policy, `nosniff`, COOP, CORP, and referrer policy. |
+| CI evidence | The `Quality gate` workflow is green; `Production smoke` is available for daily/manual verification. |
 | Deep link refresh | `/paste/:id` and `/auth/callback` do not become Vercel 404 pages. |
 
 ## Environment and secret safety

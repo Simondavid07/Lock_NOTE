@@ -17,9 +17,9 @@ Locknote is documented and tested as a complete submission rather than a visual 
 | --- | --- |
 | **Problem Understanding & Core Functionality** | Browser-side encryption, fragment-keyed sharing, burn-on-read, expiry, remote withdrawal, encrypted files, and delivery receipts. |
 | **Innovation & Meaningful Differentiation** | Dead switches, seal fingerprints, passphrase gates, encrypted file envelopes, and pre-seal realtime collaboration. |
-| **Technical Implementation & Architecture** | React/Vite client, Web Crypto API, Express/Zod/Helmet API, Supabase services, Vercel functions, RLS migrations, and typed tests. |
-| **User Experience & Accessibility** | Intentional compose-to-share workflow, theme support, keyboard command palette, semantic controls, responsive views, and actionable errors. |
-| **Performance & Reliability / Demo Quality** | Health endpoint, validation, rate limits, protected maintenance, production smoke test, and automated checks. |
+| **Technical Implementation & Architecture** | React/Vite client, Web Crypto API, Express/Zod/Helmet API, Supabase Auth and owner-only RLS account tables, Vercel functions, static CSP, and typed tests. |
+| **User Experience & Accessibility** | Intentional compose-to-share workflow, theme support, session-aware protected routes, keyboard command palette, skip link, semantic controls, responsive views, actionable errors, and automated axe checks. |
+| **Performance & Reliability / Demo Quality** | Health/version readiness, request IDs and safe timing telemetry, validation, rate limits, protected maintenance, bundle budget, live smoke test, and automated CI. |
 | **Documentation & Explanation** | This README plus dedicated evaluation, demo, architecture, security, API, testing, comparison, and environment guides. |
 
 > Start with the **[Evaluation Guide](docs/EVALUATION.md)** for a rubric-by-rubric explanation, then use **[DEMO.md](docs/DEMO.md)** for a repeatable evaluator walkthrough.
@@ -44,7 +44,7 @@ Locknote is documented and tested as a complete submission rather than a visual 
   <img src="docs/assets/locknote-github-profile-dashboard.png" alt="Locknote GitHub-authenticated profile showing verified identity, editable research bio, vault contacts, and local security statistics" width="100%" />
 </p>
 
-After GitHub sign-in through Supabase Auth, Locknote presents a personalized identity view with the provider avatar, username, email, a custom local bio/research tag, and a route to the user's browser-local vault. The vault summary keeps sender controls and tracked link status easy to find without creating a server-side plaintext archive.
+After GitHub sign-in through Supabase Auth, Locknote presents a personalized identity view with the provider avatar, username, email, an **opt-in private account bio**, and a route to the user's browser-local vault. The bio and contact usernames are protected by owner-only Supabase row-level security; the vault summary keeps sender controls and tracked link status easy to find without creating a server-side plaintext archive.
 
 ### QR-assisted secure delivery
 
@@ -66,7 +66,7 @@ flowchart LR
     B --> C[GitHub\nverifies identity]
     C --> D[Supabase callback\ncreates browser session]
     D --> E[Locknote /auth/callback\nexchanges PKCE session]
-    E --> F[Personal profile\nprovider identity + local bio]
+    E --> F[Private account profile\nprovider identity + opt-in bio]
     F --> G[Browser-local vault\ntracked links, receipts, withdrawal]
 
     B -. GitHub client secret remains in Supabase .-> H[Supabase provider settings]
@@ -81,7 +81,7 @@ flowchart LR
     class E,I trusted;
 ```
 
-This flow keeps responsibilities clear: **GitHub verifies identity**, **Supabase manages OAuth and the browser session**, and **Locknote presents a personalized, browser-local vault without storing note plaintext in a profile record**.
+This flow keeps responsibilities clear: **GitHub verifies identity**, **Supabase manages OAuth, the browser session, and owner-only profile/contact rows**, and **Locknote presents a browser-local capability vault without storing note plaintext, keys, share URLs, or owner tokens in a profile record**.
 
 ## Demo
 
@@ -110,9 +110,11 @@ This flow keeps responsibilities clear: **GitHub verifies identity**, **Supabase
 | **Receipts and owner preview** | The owner can preview a note without burning it, inspect delivery metadata, and retrieve view receipts. |
 | **Realtime collaboration drafts** | Temporary draft rooms use Supabase Realtime and are sealed or automatically purged after inactivity. |
 | **GitHub sign-in** | GitHub OAuth is handled by Supabase Auth; GitHub credentials stay in Supabase provider configuration, never in the browser bundle or API source. |
-| **Personalized profile** | Authenticated users see provider identity, avatar, username, email, a local custom bio/research tag, and a direct route to their personal vault. |
+| **Private account profile** | Authenticated users see provider identity, avatar, username, email, and an optional ≤160-character bio saved through owner-only Supabase RLS. No secret content or key material is stored there. |
 | **Browser-local vault** | The dashboard keeps links created in the current browser available for copying, receipt checks, and withdrawal without becoming a server-side plaintext archive. |
-| **Vault contacts interface** | A browser-local contact list helps users visually organize a sharing network; it is not a server-synchronized directory or decryption permission system. |
+| **Private vault contacts** | Each authenticated user can save/remove private GitHub username shortcuts through owner-only RLS. Contacts are not a directory, share recipient, or decryption-permission system. |
+| **Accessibility safeguards** | Axe-backed public-route checks, keyboard command-palette behavior, a skip link, visible focus treatment, and reduced-motion-aware interaction provide measurable accessibility evidence. |
+| **Production hardening** | Static CSP and companion security headers, request IDs, safe timing telemetry, a JavaScript bundle budget, pull-request CI, and a scheduled public smoke check protect release quality. |
 | **QR-assisted delivery** | The sealed-delivery card renders the full private link as an accessible QR code for intentional cross-device transfer. |
 | **Seal fingerprints** | Human-friendly word and glyph fingerprints can be compared with a recipient out of band before opening a sensitive note. |
 
@@ -144,8 +146,8 @@ Realtime collaboration is a **pre-seal drafting feature**, not an end-to-end enc
 | Layer | Technology | Responsibility |
 | --- | --- | --- |
 | Client | React 19, Vite, TypeScript, Tailwind, Motion | Encrypt/decrypt content, render the editor, manage share links, and use Supabase Auth/Realtime. |
-| API | Express 5, Zod, Helmet, rate limits | Validates encrypted envelopes, manages lifecycle operations, serves receipts, and performs owner-controlled deletion. |
-| Persistence | Supabase Postgres, Storage, Realtime, Auth | Stores encrypted records and encrypted file blobs, syncs temporary collaboration drafts, and manages GitHub/email sessions. |
+| API | Express 5, Zod, Helmet, rate limits | Validates encrypted envelopes, manages lifecycle operations, serves receipts, performs owner-controlled deletion, and emits privacy-safe request timing/correlation metadata. |
+| Persistence | Supabase Postgres, Storage, Realtime, Auth | Stores encrypted records and encrypted file blobs, syncs temporary collaboration drafts, manages GitHub/email sessions, and protects opt-in profile/contact metadata with owner-only RLS. |
 | Hosting | Vercel | Builds the Vite SPA, serves Express API functions under `/api`, and calls the protected daily maintenance function. |
 
 ```text
@@ -169,7 +171,7 @@ locknote/
 
 ## Submission readiness
 
-The repository is ready for code review and a live evaluation. Before submitting, replace the optional video placeholder above, confirm the live link opens, and follow the **[submission checklist](docs/ENVIRONMENT.md#submission-rules)** for private environment values.
+The repository is ready for code review and a live evaluation. Before submitting, replace the optional video placeholder above, confirm the live link opens, confirm the `Quality gate` workflow is green, and follow the **[submission checklist](docs/ENVIRONMENT.md#submission-rules)** for private environment values.
 
 | Submission item | Repository location |
 | --- | --- |

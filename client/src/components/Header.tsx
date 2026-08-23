@@ -5,6 +5,7 @@ import { motion } from 'motion/react'
 import { api } from '../lib/api'
 import { useAppStore, type Theme } from '../lib/app-store'
 import { cn } from '../lib/cn'
+import { useAuth } from '../lib/auth'
 import { Kbd } from './ui'
 
 function Mark({ className }: { className?: string }) {
@@ -50,7 +51,7 @@ export function Header() {
   const setTheme = useAppStore((s) => s.setTheme)
   const location = useLocation()
   const [scrolled, setScrolled] = useState(false)
-  const [user, setUser] = useState<{ username: string; avatarUrl: string } | null>(null)
+  const { profile: user } = useAuth()
 
   const health = useQuery({
     queryKey: ['health'],
@@ -63,12 +64,6 @@ export function Header() {
     const handler = () => setScrolled(window.scrollY > 12)
     window.addEventListener('scroll', handler, { passive: true })
 
-    const saved = localStorage.getItem('locknote:auth_user')
-    if (saved) {
-      try { setUser(JSON.parse(saved)) } catch { setUser(null) }
-    } else {
-      setUser(null)
-    }
 
     return () => window.removeEventListener('scroll', handler)
   }, [location.pathname])
@@ -159,7 +154,7 @@ export function Header() {
             <span className="font-mono text-[9px]">Search</span><Kbd>⌘K</Kbd>
           </button>
 
-          <span className={cn('size-1.5 rounded-full', healthClass)} title="Service status" aria-label="Service status" />
+          <span role="status" className={cn('size-1.5 rounded-full', healthClass)} title="Service status" aria-label={health.isError ? 'Service status: unavailable' : health.isSuccess && !health.data.ok ? 'Service status: degraded' : 'Service status: operational'} />
         </div>
       </motion.div>
     </header>

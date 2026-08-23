@@ -1863,9 +1863,9 @@ body { background: var(--paper); }
 .dark .login-entry { border-color: rgba(255,255,255,0.14) !important; background: linear-gradient(145deg, rgba(43,33,35,0.9), rgba(25,21,23,0.8)) !important; }
 .login-entry-wash { position: absolute; top: -12rem; right: -10rem; width: 26rem; height: 26rem; border-radius: 50%; background: radial-gradient(circle, rgba(218,171,149,0.24), transparent 66%); pointer-events: none; }
 .login-divider { position: relative; height: 1px; background: rgba(83,57,46,0.13); text-align: center; }
-.login-divider span { position: relative; top: -0.48rem; padding: 0 0.75rem; background: #fffdf9; color: #9b918b; font-family: var(--font-mono); font-size: 0.55rem; font-weight: 800; letter-spacing: 0.14em; }
+.login-divider span { position: relative; top: -0.48rem; padding: 0 0.75rem; background: #fffdf9; color: #5f5752; font-family: var(--font-mono); font-size: 0.55rem; font-weight: 800; letter-spacing: 0.14em; }
 .dark .login-divider { background: rgba(255,255,255,0.12); }
-.dark .login-divider span { background: #2a2224; color: #a99e98; }
+.dark .login-divider span { background: #2a2224; color: #e3d9d4; }
 
 @media (max-width: 720px) {
   .library-header { align-items: flex-start; flex-direction: column; gap: 1.5rem; padding: 1.5rem; border-radius: 1.4rem; }
@@ -1903,7 +1903,7 @@ body { background: var(--paper); }
 .dark .notes-boundary .hero-overline { color: #8d4234; }
 .notes-boundary b { color: #fffaf5; font-weight: 700; }
 .dark .notes-boundary b { color: #2a2221; }
-.notes-footer { margin-top: 2.2rem; text-align: center; color: #9b918b; font-family: var(--font-mono); font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em; line-height: 1.7; }
+.notes-footer { margin-top: 2.2rem; text-align: center; color: #332d29; font-family: var(--font-mono); font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em; line-height: 1.7; }
 
 
 /* ── Final precision finish ── */

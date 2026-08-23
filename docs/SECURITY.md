@@ -43,3 +43,11 @@ Locknote adheres to strict cryptographic principles to ensure zero-knowledge dat
 - **Strict Size Limits**: Text payloads capped at ~1 MB; file payloads capped at 5 MB.
 - **Rate Limiting**: Sliding window per-IP buckets on paste creation (20/min) and consumption (120/min).
 - **Constant-Time Comparison**: Owner capability tokens use `crypto.timingSafeEqual`.
+
+- **Static Delivery Policy**: Vercel serves the application with an enforced CSP, restrictive Permissions Policy, `nosniff`, frame protection, COOP, CORP, and a strict referrer policy. The policy permits only Lock Note assets, required font/identity sources, and Supabase HTTPS/WebSocket connections.
+- **Session-backed Private Routes**: `/dashboard` and `/profile` wait for Supabase session restoration and redirect unauthenticated visitors to login. Browser-local display data is never accepted as identity proof.
+- **Owner-only Account Metadata**: `profiles` and `vault_contacts` use authenticated owner-only row-level security. These tables are limited to opt-in display metadata and contact usernames; they must never store note content, ciphertext, keys, fragments, passphrases, share URLs, or owner capabilities.
+- **Redacted Operational Telemetry**: API responses expose a request ID and timing metric. Structured logs retain only a normalized route template, method, status, duration, request ID, and safe error class. They do not record bodies, secrets, path identifiers, authorization values, or user-provided content.
+- **Release Gates**: CI fails on type, test, production-audit, bundle-budget, or serious/critical accessibility regressions. A scheduled/manual live smoke job verifies both the zero-knowledge lifecycle and production static headers.
+
+> **Operational caveat:** the enforced CSP is intentionally narrow. When adding an external asset, analytics provider, identity provider, or browser integration, update the policy only after confirming the exact required origins and testing the OAuth, QR, and Supabase flows.

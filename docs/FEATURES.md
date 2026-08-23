@@ -13,16 +13,16 @@ This guide documents the product experience shown in the live application and sc
 | Recipient lifecycle | Burn after read, expiry, and passphrase protection. | API manages eligibility and lifecycle state while browser performs decryption. |
 | Sender controls | Owner preview, view receipts, and remote withdrawal. | Owner capability is held in the sender browser session for that sealed note. |
 | GitHub authentication | Continue with GitHub through Supabase Auth. | GitHub OAuth client credentials are stored in Supabase provider settings, not the repository or browser bundle. |
-| Personal profile | View provider identity, avatar, username, email, and edit a personal bio/research tag. | Profile presentation is derived from the authenticated browser session; the custom bio is stored locally in that browser. |
-| Personal vault | Review tracked notes, active links, burn state, and sender controls. | The vault is a browser-local management view for links created in that browser; it is not a server-visible plaintext archive. |
-| Vault contacts | Add usernames to a visual sharing-network list. | The current contacts interface is a client-side personalization aid, not a server-synchronized directory or access-control system. |
+| Personal profile | View provider identity, avatar, username, email, and edit an optional bio/research tag. | Provider identity comes from the authenticated session; the optional bio is stored in an owner-only Supabase `profiles` row. It never contains secret content or key material. |
+| Personal vault | Review tracked notes, active links, burn state, and sender controls. | The vault is a browser-local management view for capability-bearing links created in that browser; it is not a server-visible plaintext archive. |
+| Vault contacts | Add or remove private GitHub username shortcuts. | Contacts are stored in owner-only Supabase `vault_contacts` rows. They are not a public directory, access-control system, share recipient, or decryption permission. |
 | Pre-seal collaboration | Join a temporary draft workflow before sealing the final note. | Drafting is explicitly not described as end-to-end encrypted co-editing; sealing starts the encrypted-note boundary. |
 
 ## Visual product proof
 
 ### GitHub-authenticated personal profile and vault
 
-![Lock Note GitHub-authenticated personal profile with user identity, editable bio, local vault contacts, and security summary](assets/locknote-github-profile-dashboard.png)
+![Lock Note GitHub-authenticated personal profile with user identity, editable bio, private vault contacts, and security summary](assets/locknote-github-profile-dashboard.png)
 
 After a user completes GitHub OAuth through Supabase Auth, the profile page presents the authenticated provider identity: avatar, display name, GitHub username, email, and a provider-verified badge. The user can personalize a research bio/tag and move into the vault dashboard, which summarizes notes tracked by that browser and their active share state.
 
@@ -30,13 +30,13 @@ After a user completes GitHub OAuth through Supabase Auth, the profile page pres
 | --- | --- |
 | Provider-verified identity badge | The profile reflects the authenticated GitHub provider session. |
 | Avatar, username, and email | Identity information is rendered from the browser’s authenticated profile data. |
-| Custom profile bio/research tag | A user can personalize their local Lock Note profile context. |
+| Custom profile bio/research tag | A user can save an optional ≤160-character account bio in their owner-only profile row. |
 | View Vault | Opens the browser-local note management dashboard. |
-| Vault Contacts & Team | Provides a client-side contact list for visual organization of a sharing network. |
+| Vault contacts | Provides a private, account-scoped GitHub username shortcut list for visual organization. |
 | Security Statistics | Shows locally tracked sealed notes, active links, and the default AES-256-GCM cipher. |
-| Sign out | Clears the browser-side Lock Note authentication profile state and returns to the compose flow. |
+| Sign out | Revokes the Supabase session, clears the presentation cache, and returns to the compose flow. |
 
-> **Accurate state note:** profile bio and the visual vault-contact list are currently browser-local personalization features. They are not stored as a server-synchronized social graph, and they do not grant a contact permission to decrypt a note. That design avoids expanding the zero-knowledge backend into a plaintext contact directory.
+> **Accurate state note:** the optional bio and contact list are private account metadata protected by owner-only RLS. They are not a server-synchronized social graph, and they do not grant a contact permission to decrypt a note. Capability-bearing links, owner tokens, share URLs, URL fragments, keys, passphrases, and note content remain outside these tables.
 
 ### Sealed delivery, QR handoff, and sender controls
 
@@ -72,8 +72,9 @@ Lock Note also exposes the reasoning behind its privacy controls instead of trea
 | Comparison modal | Presents Lock Note’s design differences from a classic pastebin workflow. | Compose page. |
 | Syntax-aware rendering | Presents note formats in a suitable renderer after successful client-side decryption. | Recipient view. |
 | Expiry countdown | Shows remaining time for active expiring notes. | Recipient view. |
-| Command palette | Opens with `⌘K` or `Ctrl+K` for keyboard-first navigation. | Available application-wide. |
-| Motion preference support | The sealed-delivery card respects a browser reduced-motion preference. | Delivery flow. |
+| Command palette | Opens with `⌘K` or `Ctrl+K`, supports arrow navigation and Escape dismissal. | Available application-wide. |
+| Skip link and focus treatment | Keyboard users can skip repeated navigation and identify focused native controls. | Application shell and shared UI controls. |
+| Motion preference support | The sealed-delivery card and custom cursor respect a browser reduced-motion preference; the cursor is limited to fine-pointer devices. | Delivery flow and application shell. |
 
 These tools are designed to support a **transparent security experience**. A user can understand policy consequences, see lifecycle state, and learn the trust boundary without being required to read the source code first.
 
@@ -91,8 +92,9 @@ sequenceDiagram
     SB->>GH: Redirect to GitHub authorization
     GH-->>SB: Authorization result
     SB-->>App: Return through /auth/callback with session code
-    App->>App: Exchange session code and cache safe display profile
-    App-->>User: Redirect to dashboard or profile
+    App->>App: Exchange session code and restore Supabase session
+    App->>SB: Read/write owner-only profile or contact metadata
+    App-->>User: Redirect to the requested local private route
 ```
 
 The browser uses Supabase Auth rather than handling a GitHub authorization-code exchange in the Lock Note API. GitHub client secrets remain in the Supabase provider configuration. The deployed flow was verified end-to-end through the production callback and dashboard redirect.
@@ -128,6 +130,7 @@ Users should understand that browser-local tracking is device-specific. Clearing
 | Status badges | Policy states are expressed with labels such as “burn after read,” “passphrase protected,” and “expires,” not color alone. |
 | Reduced motion | Completion card respects the browser reduced-motion preference. |
 | Native sharing | Offered only on browsers that support the Web Share API; the copy control remains available. |
+| Automated accessibility | Playwright plus axe blocks serious/critical public-route issues and verifies command-palette Escape plus skip-link keyboard behavior. |
 
 ## Reviewer demo references
 
