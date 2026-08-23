@@ -58,6 +58,31 @@ The delivery screen makes the privacy model understandable at the point of shari
 
 For a detailed feature-by-feature explanation and privacy boundary, see the **[Feature Guide](docs/FEATURES.md)**.
 
+### GitHub authentication to personal vault flow
+
+```mermaid
+flowchart LR
+    A[User selects\nContinue with GitHub] --> B[Supabase Auth\nstarts OAuth]
+    B --> C[GitHub\nverifies identity]
+    C --> D[Supabase callback\ncreates browser session]
+    D --> E[Locknote /auth/callback\nexchanges PKCE session]
+    E --> F[Personal profile\nprovider identity + local bio]
+    F --> G[Browser-local vault\ntracked links, receipts, withdrawal]
+
+    B -. GitHub client secret remains in Supabase .-> H[Supabase provider settings]
+    G -. plaintext never added to vault records .-> I[Encrypted envelope lifecycle]
+
+    classDef trusted fill:#e8f5ef,stroke:#247a56,color:#173f30,stroke-width:1.5px;
+    classDef local fill:#f4edff,stroke:#7958a8,color:#3e275e,stroke-width:1.5px;
+    classDef external fill:#fff4dd,stroke:#b7791f,color:#6d4508,stroke-width:1.5px;
+    class A,F,G local;
+    class B,D,H trusted;
+    class C external;
+    class E,I trusted;
+```
+
+This flow keeps responsibilities clear: **GitHub verifies identity**, **Supabase manages OAuth and the browser session**, and **Locknote presents a personalized, browser-local vault without storing note plaintext in a profile record**.
+
 ## Demo
 
 | Resource | Link |
