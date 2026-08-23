@@ -383,3 +383,4 @@ This project is licensed under the [MIT License](LICENSE).
 [3]: https://vercel.com/docs/cron-jobs/manage-cron-jobs "Vercel: Managing Cron Jobs"
 [4]: https://vercel.com/docs/frameworks/backend/express "Vercel: Express on Vercel"
 [5]: https://vercel.com/docs/frameworks/frontend/vite "Vercel: Vite on Vercel"
+[6]: https://github.com/PrivateBin/PrivateBin "PrivateBin: official GitHub repository"

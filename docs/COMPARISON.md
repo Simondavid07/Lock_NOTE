@@ -2,7 +2,7 @@
 
 ## Positioning
 
-Lock Note belongs to the private-sharing category, but it is designed as a modern **encrypted-envelope lifecycle service** rather than a simple paste board. The project keeps the familiar “create a private link and share it once” interaction while adding sender agency, browser-native cryptography, encrypted file support, and a deliberate collaboration boundary.
+Lock Note belongs to the private-sharing category, but it is designed as a modern **encrypted-envelope lifecycle service** rather than a simple paste board. The project keeps the familiar “create a private link and share it once” interaction associated with projects such as [PrivateBin](https://github.com/PrivateBin/PrivateBin), while adding sender agency, browser-native cryptography, encrypted file support, and a deliberate collaboration boundary.
 
 The table below is a design comparison that explains why each Lock Note capability matters to the user and evaluator. It is not a claim that every external tool has identical defaults or extension support.
 
