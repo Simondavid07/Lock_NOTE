@@ -25,7 +25,7 @@ Locknote is a zero-knowledge, self-destructing note-sharing application. It encr
 
 | Resource | Link |
 | --- | --- |
-| Live application | `https://YOUR-VERCEL-PROJECT.vercel.app` |
+| Live application | `https://lock-note-sigma.vercel.app/` |
 | Video walkthrough | **Add your video link here:** `https://YOUR-DEMO-VIDEO-URL` |
 | Local application | `http://localhost:5173` |
 | Local API health check | `http://localhost:3001/api/health` |
