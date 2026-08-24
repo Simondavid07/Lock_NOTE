@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'motion/react'
 import { toast } from 'sonner'
 import { api } from '../lib/api'
@@ -6,6 +7,7 @@ import { CopyButton } from './CopyButton'
 import { FingerprintBadge, type SealFingerprint } from './FingerprintBadge'
 import { Badge, Button, Card } from './ui'
 import { formatRelative } from '../lib/encoding'
+import { guardianCardText } from '../lib/guardian-wipe'
 
 export interface ShareResult {
   id: string
@@ -17,6 +19,7 @@ export interface ShareResult {
   passphraseProtected: boolean
   expiresAt: number | null
   createdAt: number
+  guardian?: { threshold: number; total: number; shares: string[] }
 }
 
 async function qrDataUrl(text: string): Promise<string> {
@@ -32,6 +35,8 @@ export function ShareCard({ result, onReset }: { result: ShareResult; onReset: (
   const [qr, setQr] = useState<string | null>(null)
   const [qrFailed, setQrFailed] = useState(false)
   const [wiping, setWiping] = useState(false)
+  const [guardianIndex, setGuardianIndex] = useState(0)
+  const [guardianQr, setGuardianQr] = useState<string | null>(null)
   const reduceMotion = useReducedMotion()
   const ownerTokenSaved = useRef(false)
 
@@ -44,6 +49,18 @@ export function ShareCard({ result, onReset }: { result: ShareResult; onReset: (
       .then(setQr)
       .catch(() => setQrFailed(true))
   }, [result])
+
+  useEffect(() => {
+    const guardian = result.guardian
+    const share = guardian?.shares[guardianIndex]
+    if (!guardian || !share) {
+      setGuardianQr(null)
+      return
+    }
+    void qrDataUrl(guardianCardText(guardianIndex + 1, guardian.total, share))
+      .then(setGuardianQr)
+      .catch(() => setGuardianQr(null))
+  }, [guardianIndex, result.guardian])
 
   async function shareNative(): Promise<void> {
     if (typeof navigator.share === 'function') {
@@ -150,6 +167,61 @@ export function ShareCard({ result, onReset }: { result: ShareResult; onReset: (
           </div>
         </div>
       </Card>
+
+      {result.guardian && (
+        <Card className="mt-5 border-amber-500/30 bg-amber-50/60 p-5 dark:bg-amber-500/5 dark:border-amber-400/25">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="vault-kicker mb-1 text-amber-700 dark:text-amber-300">Emergency Guardian Wipe</p>
+              <h3 className="font-display text-lg font-bold">{result.guardian.threshold}-of-{result.guardian.total} trustees can withdraw this note.</h3>
+              <p className="mt-1.5 max-w-2xl text-xs leading-5 text-zinc-600 dark:text-zinc-300">
+                A guardian card can help a quorum revoke the server copy. It cannot decrypt the note, reveal its key, or open the delivery link.
+              </p>
+            </div>
+            <Badge tone="amber">revocation only</Badge>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-1.5" role="tablist" aria-label="Guardian share card">
+            {result.guardian.shares.map((_share, index) => (
+              <button
+                key={index}
+                type="button"
+                role="tab"
+                aria-selected={guardianIndex === index}
+                onClick={() => setGuardianIndex(index)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${guardianIndex === index ? 'bg-amber-600 text-white' : 'border border-amber-700/25 bg-white/70 text-amber-800 hover:bg-amber-100 dark:bg-void/60 dark:text-amber-200'}`}
+              >
+                Guardian {index + 1}
+              </button>
+            ))}
+          </div>
+
+          {result.guardian.shares[guardianIndex] && (
+            <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
+              <div className="min-w-0">
+                <label className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-300" htmlFor="guardian-card">Guardian {guardianIndex + 1} recovery card</label>
+                <textarea
+                  id="guardian-card"
+                  readOnly
+                  value={guardianCardText(guardianIndex + 1, result.guardian.total, result.guardian.shares[guardianIndex]!)}
+                  onFocus={(event) => event.currentTarget.select()}
+                  className="min-h-28 w-full rounded-xl border border-amber-700/25 bg-white/80 p-3 font-mono text-[10px] leading-5 text-zinc-700 dark:border-void-line dark:bg-void/70 dark:text-zinc-300"
+                  aria-label={`Guardian ${guardianIndex + 1} recovery card`}
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <CopyButton text={guardianCardText(guardianIndex + 1, result.guardian.total, result.guardian.shares[guardianIndex]!)} label="Copy guardian card" autoClearSeconds={120} />
+                  <Link to="/guardian-wipe" className="inline-flex h-9 items-center rounded-xl px-3 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-500/10">Open Guardian Wipe console →</Link>
+                </div>
+              </div>
+              {guardianQr && <img src={guardianQr} alt={`QR code for Guardian ${guardianIndex + 1} recovery card`} className="size-32 rounded-2xl border border-amber-700/25 bg-white p-2" width={128} height={128} />}
+            </div>
+          )}
+
+          <p className="mt-4 text-[11px] font-medium text-amber-800/90 dark:text-amber-200/90">
+            Deliver each guardian card through a separate channel. Never send a guardian card alongside the recipient delivery link.
+          </p>
+        </Card>
+      )}
     </motion.div>
   )
 }

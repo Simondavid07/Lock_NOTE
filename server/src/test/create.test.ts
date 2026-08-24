@@ -13,7 +13,7 @@ describe('POST /api/pastes', () => {
     expect(res.status).toBe(201)
     expect(res.body.id).toMatch(/^[A-Za-z0-9_-]{8,}$/)
     expect(res.body.status).toBe('alive')
-    expect(res.body.ownerToken).toBe('owner-token-for-testing-purposes-123456')
+    expect(res.body.ownerToken).toBe('MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0')
     expect(res.body.createdAt).toBeGreaterThan(0)
   })
 
@@ -27,16 +27,36 @@ describe('POST /api/pastes', () => {
     expect(res.status).toBe(400)
   })
 
+  it('rejects non-policy KDF choices, malformed fixed bytes, and a missing receipt verifier', async () => {
+    const cases = [
+      { ...createPayload(), iterations: 1 },
+      { ...createPayload(), kdf: 'pbkdf2', iterations: 599_999 },
+      { ...createPayload(), salt: 'BwcH' },
+      { ...createPayload(), iv: 'CQkJCQkJ' },
+      { ...createPayload(), receiptProofHash: undefined },
+    ]
+
+    for (const payload of cases) {
+      expect((await api(ctx.app).post('/api/pastes').send(payload)).status).toBe(400)
+    }
+  })
+
   it('accepts file secrets with a storage payload and rejects files without one', async () => {
     const res = await api(ctx.app).post('/api/pastes').send({
       ...createPayload({ format: 'file' }),
-      file: { storagePayload: 'c3RvcmluZ2UtcGF5bG9hZC1ieXRlcy4uLi4=', size: 10, fileIv: 'ZmlsZS1pdi1ieXRlcw' },
+      file: { storagePayload: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=', size: 10, fileIv: 'CQkJCQkJCQkJCQkJ' },
     })
     expect(res.status).toBe(201)
     expect(res.body.format).toBe('file')
 
     const res2 = await api(ctx.app).post('/api/pastes').send(createPayload({ format: 'file' }))
     expect(res2.status).toBe(400)
+
+    const malformed = await api(ctx.app).post('/api/pastes').send({
+      ...createPayload({ format: 'file' }),
+      file: { storagePayload: 'not-base64', size: 10, fileIv: 'CQkJCQkJCQkJCQkJ' },
+    })
+    expect(malformed.status).toBe(400)
   })
 
   it('persists burn-after-read and expiry metadata', async () => {
@@ -57,5 +77,8 @@ describe('POST /api/pastes', () => {
     // The server must never expose the owner token or ciphertext via metadata.
     expect(meta.body.ciphertext).toBeUndefined()
     expect(meta.body.ownerToken).toBeUndefined()
+    expect(meta.body.receiptProofHash).toBeUndefined()
+    expect(meta.body.guardianVerifier).toBeUndefined()
+    expect(meta.body.storagePath).toBeUndefined()
   })
 })

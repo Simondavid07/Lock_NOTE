@@ -18,6 +18,9 @@ This directory contains the project documentation used for implementation, deplo
 | [sql/002_harden_drafts_rls.sql](sql/002_harden_drafts_rls.sql) | Apply draft access hardening to an existing Lock Note installation. |
 | [sql/003_profiles_and_contacts.sql](sql/003_profiles_and_contacts.sql) | Add owner-only profile/contact metadata tables with an explicit no-secrets data contract. |
 | [sql/004_revoke_rls_trigger_execute.sql](sql/004_revoke_rls_trigger_execute.sql) | Remove public execute access from the SECURITY DEFINER RLS event-trigger helper. |
+| [sql/005_verified_delivery_and_guardian_wipe.sql](sql/005_verified_delivery_and_guardian_wipe.sql) | Add hash-only receipt/guardian/file-lease state and make encrypted file storage non-public. |
+| [sql/006_revoke_inherited_storage_privileges.sql](sql/006_revoke_inherited_storage_privileges.sql) | Record the existing-project Storage privilege follow-up; verify authorization through private bucket, Storage RLS, and no browser policies. |
+| [CHANGELOG.md](../CHANGELOG.md) | Review dated security and product-release rationale. |
 
 ## Suggested evaluation reading order
 
@@ -25,6 +28,7 @@ This directory contains the project documentation used for implementation, deplo
 2. Review [EVALUATION.md](EVALUATION.md) for the rubric mapping.
 3. Use [DEMO.md](DEMO.md) while viewing the live app.
 4. Read [ARCHITECTURE.md](ARCHITECTURE.md) and [SECURITY.md](SECURITY.md) for implementation depth.
-5. Use [TESTING.md](TESTING.md) and [ENVIRONMENT.md](ENVIRONMENT.md) to reproduce checks safely.
+5. Review [API.md](API.md) for proof acknowledgement, private file lease, and Guardian Wipe contracts.
+6. Use [TESTING.md](TESTING.md) and [ENVIRONMENT.md](ENVIRONMENT.md) to reproduce checks safely.
 
 > The environment templates are located at the repository root: [`.env.example`](../.env.example) and [`.env.submission.template`](../.env.submission.template). They contain variable names and safe placeholders only; production secrets are intentionally excluded from version control.

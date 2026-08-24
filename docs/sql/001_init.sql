@@ -94,10 +94,13 @@ end $$;
 
 -- ------------------------------------------------------------
 -- 5. Storage — encrypted file blobs (ciphertext only).
---    Public read is safe: objects are unreadable without the key.
+--    The bucket is private. Browser clients redeem a short-lived API lease;
+--    no direct object URL is returned and no anon/authenticated Storage policy
+--    is created for this bucket. The server-only service role performs upload,
+--    download, and cleanup.
 -- ------------------------------------------------------------
 insert into storage.buckets (id, name, public)
-values ('secrets', 'secrets', true)
+values ('secrets', 'secrets', false)
 on conflict (id) do nothing;
 
 -- ------------------------------------------------------------

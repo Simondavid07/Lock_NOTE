@@ -19,7 +19,6 @@ import {
 } from '../lib/crypto'
 import { base64urlToBytes, toArrayBuffer, formatRelative } from '../lib/encoding'
 import { api, type ConsumeResult, type Receipt } from '../lib/api'
-import { storageObjectUrl } from '../lib/supabase'
 
 type ViewState =
   | { kind: 'loading' }
@@ -89,13 +88,13 @@ export function ViewPage() {
         setState({ kind: 'revealed', consume, envelope, preview: consume.preview })
         setPassError(false)
 
-        if (consume.burnAfterRead && !consume.preview && !revealedRef.current) {
+        if (!consume.preview && envelope.v === 2 && envelope.receiptProof && !revealedRef.current) {
           revealedRef.current = true
           setBurning(true)
           try {
-            await api.viewed(consume.id)
+            await api.acknowledge(consume.id, envelope.receiptProof)
           } catch {
-            /* server janitor cleans up */
+            // Receipt acknowledgement is best-effort. It never affects local decryption or burn semantics.
           } finally {
             window.setTimeout(() => setBurning(false), 900)
           }
@@ -275,18 +274,16 @@ export function ViewPage() {
   const fileMime = isFile && envelope.mime ? envelope.mime : 'application/octet-stream'
 
   async function downloadFile(): Promise<void> {
-    if (!consume.storagePath || !consume.fileMeta) return
+    if (!consume.fileLease || !consume.fileMeta) return
     setDownloading(true)
     try {
       const { secret: frag } = parseFragment(window.location.hash)
-      const key = await deriveEncryptionKey(frag, null, {
+      const key = await deriveEncryptionKey(frag, passphrase || null, {
         salt: base64urlToBytes(consume.salt),
         kdf: consume.kdf,
         iterations: consume.iterations,
       })
-      const res = await fetch(storageObjectUrl(consume.storagePath))
-      if (!res.ok) throw new Error('storage unavailable')
-      const ct = new Uint8Array(await res.arrayBuffer())
+      const ct = await api.downloadEncryptedFile(consume.id, consume.fileLease.token)
       const plain = await decrypt(key, ct, base64urlToBytes(consume.fileMeta.iv), aadForFile(consume.id))
       const blob = new Blob([toArrayBuffer(plain)], { type: fileMime })
       const url = URL.createObjectURL(blob)
@@ -374,7 +371,7 @@ export function ViewPage() {
                 </span>
                 {burning && (
                   <span className="animate-pulse text-rose-500 font-bold" role="status">
-                    Recording read…
+                    Verifying open…
                   </span>
                 )}
               </div>
@@ -417,9 +414,10 @@ export function ViewPage() {
 
                   {showReceipt && receipt && (
                     <div className="mt-3 pt-3 border-t border-lilac-deep/20 text-xs space-y-1.5 text-zinc-600 dark:text-zinc-300">
-                      <p><strong>Views:</strong> {receipt.viewCount}</p>
-                      <p><strong>First Viewed:</strong> {receipt.firstViewedAt ? formatRelative(receipt.firstViewedAt - Date.now()) : 'Never'}</p>
-                      <p><strong>Last Viewed:</strong> {receipt.lastViewedAt ? formatRelative(receipt.lastViewedAt - Date.now()) : 'Never'}</p>
+                      <p><strong>Verified opens:</strong> {receipt.viewCount}</p>
+                      <p><strong>Acknowledged:</strong> {receipt.receiptAcknowledgedAt ? formatRelative(receipt.receiptAcknowledgedAt - Date.now()) : 'No verified acknowledgement yet'}</p>
+                      <p><strong>First verified:</strong> {receipt.firstViewedAt ? formatRelative(receipt.firstViewedAt - Date.now()) : 'Never'}</p>
+                      <p><strong>Last verified:</strong> {receipt.lastViewedAt ? formatRelative(receipt.lastViewedAt - Date.now()) : 'Never'}</p>
                     </div>
                   )}
                 </Card>

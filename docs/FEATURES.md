@@ -11,7 +11,10 @@ This guide documents the product experience shown in the live application and sc
 | QR delivery | Render the complete private share link as a QR code for another device. | The QR code represents the same sensitive full link, including the fragment; display it only to the intended recipient. |
 | Integrity fingerprint | Compare a four-word/visual seal fingerprint over a second channel. | Derived from the sealed-envelope context; it is a human verification aid, not a replacement for trusted link delivery. |
 | Recipient lifecycle | Burn after read, expiry, and passphrase protection. | API manages eligibility and lifecycle state while browser performs decryption. |
-| Sender controls | Owner preview, view receipts, and remote withdrawal. | Owner capability is held in the sender browser session for that sealed note. |
+| Verified delivery receipt | Owner sees the first verified encrypted-envelope acknowledgement after recipient-side decrypt. | The random proof is inside authenticated v2 ciphertext; the API stores only its hash and does not claim human comprehension. |
+| Private encrypted-file delivery | Recipient downloads ciphertext using a 60-second, one-use lease after consume. | The `secrets` bucket is private, no Storage path reaches the browser, and the API streams ciphertext through its service role. |
+| Guardian Wipe | Sender can issue 2-of-3 through 5-of-5 trustee recovery cards for emergency revocation. | Cards split a separate wipe capability, not a decryption key; a quorum can withdraw the server copy but cannot decrypt. |
+| Sender controls | Owner preview, verified receipts, and remote withdrawal. | Owner capability is held in the sender browser session for that sealed note. |
 | GitHub authentication | Continue with GitHub through Supabase Auth. | GitHub OAuth client credentials are stored in Supabase provider settings, not the repository or browser bundle. |
 | Personal profile | View provider identity, avatar, username, email, and edit an optional bio/research tag. | Provider identity comes from the authenticated session; the optional bio is stored in an owner-only Supabase `profiles` row. It never contains secret content or key material. |
 | Personal vault | Review tracked notes, active links, burn state, and sender controls. | The vault is a browser-local management view for capability-bearing links created in that browser; it is not a server-visible plaintext archive. |
@@ -64,7 +67,7 @@ Lock Note also exposes the reasoning behind its privacy controls instead of trea
 | Feature | User benefit | Where it appears |
 | --- | --- | --- |
 | Structured editor | Compose text, markdown, code, credentials, or encrypted-file notes in an intentional editor workflow. | Compose page. |
-| Lifecycle policy controls | Set burn-after-read, a time expiry, a passphrase gate, or a dead-switch policy before sealing. | Compose page. |
+| Lifecycle policy controls | Set burn-after-read, a time expiry, a passphrase gate, a dead-switch policy, or Guardian Wipe quorum before sealing. | Compose page. |
 | Security score gauge | Provides a visible strength summary based on the selected note policy and protection choices. | Compose page. |
 | Hex dump inspector | Lets a user inspect the input representation in a focused security-oriented workflow. | Compose page. |
 | Crypto matrix | Explains the selected encryption and key-derivation approach in a dedicated modal. | Compose page. |
@@ -117,8 +120,10 @@ Users should understand that browser-local tracking is device-specific. Clearing
 2. Copy the full share link, use the supported native-share option, or display the QR code on a private trusted screen.
 3. Optionally send the passphrase over a different channel.
 4. Compare the seal fingerprint with the recipient when stronger assurance is needed.
-5. Use the sender vault to preview, inspect a receipt, or withdraw the note while it remains active.
-6. The recipient opens the full link, retrieves ciphertext, and decrypts in-browser.
+5. Use the sender vault to preview, inspect a verified receipt, or withdraw the note while it remains active.
+6. The recipient opens the full link, retrieves ciphertext, decrypts in-browser, and only then acknowledges the encrypted proof.
+7. For a file, the browser redeems the short-lived private lease once; it never receives a Storage object path.
+8. If Guardian Wipe is enabled, trustees combine the threshold number of original cards at `/guardian-wipe` to withdraw future server delivery only.
 
 ## Accessibility and interaction details
 
@@ -134,4 +139,4 @@ Users should understand that browser-local tracking is device-specific. Clearing
 
 ## Reviewer demo references
 
-Use this guide with [DEMO.md](DEMO.md) and [EVALUATION.md](EVALUATION.md). The recommended live sequence is: sign in with GitHub, show the profile/vault boundary, seal a short test note, point out the fragment and fingerprint, show QR delivery, open as a recipient, and finally show the owner controls in the vault.
+Use this guide with [DEMO.md](DEMO.md) and [EVALUATION.md](EVALUATION.md). The recommended live sequence is: show the keyboard skip link/command palette, sign in with GitHub, show the profile/vault boundary, seal a short test note, point out the fragment and fingerprint, open as a recipient, show the verified receipt, demonstrate one private encrypted-file lease, and finally show a 2-of-3 Guardian Wipe with synthetic cards.

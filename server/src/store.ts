@@ -1,6 +1,7 @@
 import type {
   ConsumeOutcome,
   CreatePasteInput,
+  FileLease,
   DraftRecord,
   PasteRecord,
   PasteStatus,
@@ -15,27 +16,28 @@ export interface StoreHealth {
 /**
  * Persistence contract for the zero-knowledge warehouse.
  *
- * Every implementation must treat the records as opaque ciphertext — the
- * store is never allowed to inspect, log, or transform the payload bytes.
- * `MemoryStore` and `SupabaseStore` both satisfy this contract and are
- * exercised by the same test suite (dependency inversion).
+ * Every implementation must treat ciphertext as opaque. Proof and guardian
+ * capability inputs are compared only through hash-only verifiers; neither
+ * implementation may log, persist, or return the raw values.
  */
 export interface PasteStore {
   readonly kind: 'memory' | 'supabase'
-  /** The store's authoritative clock (testable via injected time). */
   now(): number
   health(): Promise<StoreHealth>
   create(input: CreatePasteInput): Promise<PasteRecord>
   get(id: string): Promise<PasteRecord | null>
-  /**
-   * Deliver the payload exactly once for burn-after-read pastes.
-   * A concurrent race is resolved atomically by the underlying store.
-   * Passing the owner token delivers a non-destructive preview.
-   */
+  /** Deliver exactly once for burn-after-read records; owner token yields a non-destructive preview. */
   consume(id: string, previewToken?: string | null): Promise<ConsumeOutcome>
-  /** Register a successful reveal (used for read receipts). */
-  viewed(id: string): Promise<{ viewCount: number } | null>
+  /** Issue a short-lived one-use lease for encrypted file bytes after a successful consume. */
+  issueFileLease(id: string): Promise<FileLease | null>
+  /** Redeem a lease once; returns the private storage path only to server code. */
+  redeemFileLease(id: string, token: string): Promise<string | null>
+  /** Atomically acknowledge a successfully decrypted envelope exactly once. */
+  acknowledge(id: string, proof: string): Promise<{ acknowledgedAt: number } | null>
+  /** Destroy a record with the sender's owner capability. */
   destroy(id: string, ownerToken: string): Promise<boolean>
+  /** Destroy a record with a reconstructed Guardian Wipe capability. */
+  guardianDestroy(id: string, capability: string): Promise<boolean>
   receipt(id: string, ownerToken: string): Promise<ReceiptInfo | null>
   status(id: string): Promise<PasteStatus>
   purgeExpired(): Promise<number>
@@ -51,7 +53,7 @@ export interface DraftStore {
   purgeOldDrafts(maxAgeMs: number): Promise<number>
 }
 
-/** Compute the effective "last activity" used by the dead switch. */
+/** Compute the effective “last verified activity” used by the dead switch. */
 export function lastActiveMs(r: Pick<PasteRecord, 'lastViewedAt' | 'createdAt'>): number {
   return r.lastViewedAt ?? r.createdAt
 }

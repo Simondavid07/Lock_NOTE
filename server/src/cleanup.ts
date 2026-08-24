@@ -19,11 +19,14 @@ export interface JanitorResult {
 export async function runJanitor(
   deps: { store: PasteStore; drafts: DraftStore; files: FileBlobStore },
 ): Promise<JanitorResult> {
-  const [pastesPurged, draftsPurged, blobsPurged] = await Promise.all([
+  // Delete records before scanning file objects; a fully parallel scan could
+  // observe a record just before expiry deletion and delay ciphertext cleanup
+  // until the next maintenance pass.
+  const [pastesPurged, draftsPurged] = await Promise.all([
     deps.store.purgeExpired(),
     deps.drafts.purgeOldDrafts(DRAFT_MAX_AGE_MS),
-    purgeOrphanBlobs(deps.store, deps.files),
   ])
+  const blobsPurged = await purgeOrphanBlobs(deps.store, deps.files)
 
   if (pastesPurged > 0 || draftsPurged > 0 || blobsPurged > 0) {
     console.log(`[janitor] purged ${pastesPurged} pastes, ${draftsPurged} drafts, ${blobsPurged} blobs`)

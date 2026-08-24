@@ -19,6 +19,9 @@ import {
   generatePasteId,
   generateSalt,
   generateSecret,
+  generateReceiptProof,
+  generateGuardianCapability,
+  sha256Base64url,
   PBKDF2_ITERATIONS,
   sealContent,
   fingerprint,
@@ -30,6 +33,7 @@ import {
 } from '../lib/crypto'
 import { base64urlToBytes, bytesToBase64, bytesToBase64url, formatBytes } from '../lib/encoding'
 import { api } from '../lib/api'
+import { splitGuardianCapability } from '../lib/guardian-wipe'
 
 type SecretType = Exclude<PasteFormat, 'file'> | 'file'
 
@@ -123,6 +127,9 @@ export function CreatePage() {
   const [ttl, setTtl] = useState<number>(86400)
   const [burn, setBurn] = useState(false)
   const [deadSwitch, setDeadSwitch] = useState<number>(0)
+  const [guardianEnabled, setGuardianEnabled] = useState(false)
+  const [guardianThreshold, setGuardianThreshold] = useState(2)
+  const [guardianTotal, setGuardianTotal] = useState(3)
   const [passphrase, setPassphrase] = useState('')
   const [showPassphrase, setShowPassphrase] = useState(false)
   const [phase, setPhase] = useState<SealPhase>('idle')
@@ -170,15 +177,24 @@ export function CreatePage() {
         iterations: requiresPassphrase ? PBKDF2_ITERATIONS : 0,
       })
 
+      const receiptProof = generateReceiptProof()
+      const receiptProofHash = await sha256Base64url(receiptProof)
+      const guardianCapability = guardianEnabled ? generateGuardianCapability() : null
+      const guardianShares = guardianCapability
+        ? await splitGuardianCapability(guardianCapability, id, guardianThreshold, guardianTotal)
+        : null
+      const guardian = guardianCapability
+        ? { threshold: guardianThreshold, total: guardianTotal, verifier: await sha256Base64url(guardianCapability) }
+        : undefined
       let filePayload: { storagePayload: string; size: number; fileIv: string } | undefined
       let envelope: ContentEnvelope
       if (type === 'file' && file) {
         const raw = new Uint8Array(await file.arrayBuffer())
         const { ciphertext: fileCt, iv: fileIvBytes } = await encrypt(key, raw, aadForFile(id))
-        envelope = { v: 1, title: title || undefined, name: file.name, mime: file.type || 'application/octet-stream' }
+        envelope = { v: 2, title: title || undefined, name: file.name, mime: file.type || 'application/octet-stream', receiptProof }
         filePayload = { storagePayload: bytesToBase64(fileCt), size: file.size, fileIv: bytesToBase64url(fileIvBytes) }
       } else {
-        envelope = { v: 1, title: title || undefined, content, language: type === 'code' ? language : undefined }
+        envelope = { v: 2, title: title || undefined, content, language: type === 'code' ? language : undefined, receiptProof }
       }
 
       const { ciphertextB64, ivB64 } = await sealContent(key, id, envelope)
@@ -191,7 +207,7 @@ export function CreatePage() {
         alg: 'aes-256-gcm', format: type,
         language: type === 'code' ? language : null,
         burnAfterRead: burn, deadSwitchDays: deadSwitch || null,
-        ttlSeconds: ttl, ownerToken, file: filePayload,
+        ttlSeconds: ttl, ownerToken, receiptProofHash, guardian, file: filePayload,
       })
 
       sessionStorage.setItem(`locknote:owner:${res.id}`, ownerToken)
@@ -216,6 +232,7 @@ export function CreatePage() {
         format: res.format, burnAfterRead: burn,
         passphraseProtected: requiresPassphrase,
         expiresAt: res.expiresAt, createdAt: res.createdAt,
+        guardian: guardianShares ? { threshold: guardianThreshold, total: guardianTotal, shares: guardianShares } : undefined,
       })
     } catch (err) {
       console.error(err)
@@ -236,7 +253,7 @@ export function CreatePage() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [type, file, content, passphrase, strength, title, language, burn, deadSwitch, ttl])
+  }, [type, file, content, passphrase, strength, title, language, burn, deadSwitch, guardianEnabled, guardianThreshold, guardianTotal, ttl])
 
   if (result) {
     return (
@@ -595,8 +612,32 @@ export function CreatePage() {
                 checked={deadSwitch > 0}
                 onCheckedChange={(v) => setDeadSwitch(v ? 7 : 0)}
                 label="🪦 Dead switch (7 days)"
-                description="Auto-destroy if no visits"
+                description="Auto-destroy if no verified opens"
               />
+              <Switch
+                id="guardian-wipe-ui"
+                checked={guardianEnabled}
+                onCheckedChange={setGuardianEnabled}
+                label="🧩 Emergency Guardian Wipe"
+                description="A trustee quorum may withdraw, never decrypt"
+              />
+              {guardianEnabled && (
+                <div className="ml-9 rounded-xl border border-amber-600/25 bg-amber-50/60 p-3 dark:bg-amber-500/5 dark:border-amber-400/20">
+                  <p className="text-[11px] leading-5 text-amber-900 dark:text-amber-100">The browser splits a separate revocation capability. Guardian cards cannot open the note or reveal the delivery key.</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <label className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">Required guardians
+                      <select value={guardianThreshold} onChange={(event) => setGuardianThreshold(Number(event.target.value))} className="mt-1 h-8 w-full rounded-lg border border-amber-700/25 bg-white px-2 text-xs dark:border-void-line dark:bg-void">
+                        {[2, 3, 4, 5].filter((value) => value <= guardianTotal).map((value) => <option key={value} value={value}>{value}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">Total cards
+                      <select value={guardianTotal} onChange={(event) => { const total = Number(event.target.value); setGuardianTotal(total); setGuardianThreshold((current) => Math.min(current, total)) }} className="mt-1 h-8 w-full rounded-lg border border-amber-700/25 bg-white px-2 text-xs dark:border-void-line dark:bg-void">
+                        {[2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Live Security Rating Gauge */}

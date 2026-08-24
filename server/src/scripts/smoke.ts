@@ -1,31 +1,72 @@
+import { createHash } from 'node:crypto'
+
 /**
- * Live smoke test against a running Locknote API.
+ * Live smoke test against a running Locknote API. It uses only fresh synthetic
+ * ciphertext and ephemeral capabilities; no human secret or deployment
+ * credential is required.
  *
- * Requires:
- *   1. The migration applied to your Supabase project (docs/sql/001_init.sql)
- *   2. `npm run dev` (or `npm run start -w server`) running on :3001
- *
- * Usage: npm run test:live -w server
+ * Requires migration 005 before this release is deployed.
+ * Usage: API_URL=https://lock-note-sigma.vercel.app npm run test:live -w server
  */
 
 const BASE = process.env.API_URL ?? 'http://localhost:3001'
 
-function assert(cond: unknown, msg: string): asserts cond {
-  if (!cond) throw new Error(`SMOKE FAIL: ${msg}`)
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(`SMOKE FAIL: ${message}`)
 }
 
-async function request(path: string, init?: RequestInit): Promise<{ status: number; body: any }> {
+function b64url(bytes: Buffer): string {
+  return bytes.toString('base64url')
+}
+
+function proofHash(value: string): string {
+  return createHash('sha256').update(value).digest('base64url')
+}
+
+const OWNER = b64url(Buffer.alloc(24, 0x31))
+const PROOF = b64url(Buffer.alloc(32, 0x32))
+const CAPABILITY = b64url(Buffer.alloc(32, 0x33))
+
+function createBody(overrides: Record<string, unknown> = {}) {
+  return {
+    ciphertext: b64url(Buffer.from('synthetic-smoke-ciphertext')),
+    salt: b64url(Buffer.alloc(32, 0x07)),
+    iv: b64url(Buffer.alloc(12, 0x09)),
+    iterations: 0,
+    kdf: 'hkdf',
+    alg: 'aes-256-gcm',
+    format: 'text',
+    language: null,
+    burnAfterRead: false,
+    deadSwitchDays: null,
+    ttlSeconds: 300,
+    ownerToken: OWNER,
+    receiptProofHash: proofHash(PROOF),
+    ...overrides,
+  }
+}
+
+async function request(path: string, init?: RequestInit): Promise<{ status: number; body: unknown; headers: Headers }> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   })
-  let body: any = null
+  let body: unknown = null
   try {
     body = await res.json()
   } catch {
-    /* empty body */
+    /* binary or empty response */
   }
-  return { status: res.status, body }
+  return { status: res.status, body, headers: res.headers }
+}
+
+async function binary(path: string, body: unknown): Promise<{ status: number; bytes: Uint8Array; headers: Headers }> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return { status: res.status, bytes: new Uint8Array(await res.arrayBuffer()), headers: res.headers }
 }
 
 async function main(): Promise<void> {
@@ -33,98 +74,91 @@ async function main(): Promise<void> {
 
   const health = await request('/api/health')
   assert(health.status === 200, `health should be 200, got ${health.status}`)
-  console.log(`  ✓ health ok (store=${health.body.store}, detail=${health.body.storeDetail})`)
+  const healthBody = health.body as { store?: string; storeDetail?: string }
+  console.log(`  ✓ health ok (store=${healthBody.store}, detail=${healthBody.storeDetail})`)
 
-  const created = await request('/api/pastes', {
-    method: 'POST',
-    body: JSON.stringify({
-      ciphertext: Buffer.from('smoke-test-ciphertext-payload').toString('base64'),
-      salt: Buffer.from('smoke-test-salt-bytes-for-kdf').toString('base64'),
-      iv: Buffer.from('smoke-test-iv').toString('base64'),
-      iterations: 0,
-      kdf: 'hkdf',
-      alg: 'aes-256-gcm',
-      format: 'text',
-      language: null,
-      burnAfterRead: true,
-      deadSwitchDays: null,
-      ttlSeconds: 300,
-      ownerToken: 'smoke-owner-token-0123456789abcdef',
-    }),
-  })
+  const created = await request('/api/pastes', { method: 'POST', body: JSON.stringify(createBody({ burnAfterRead: true })) })
   assert(created.status === 201, `create should be 201, got ${created.status}`)
-  const id = created.body.id as string
-  console.log(`  ✓ created paste ${id}`)
+  const createdBody = created.body as { id: string }
+  const id = createdBody.id
+  console.log(`  ✓ created v2 proof-enabled paste ${id}`)
 
   const meta = await request(`/api/pastes/${id}`)
   assert(meta.status === 200, `metadata should be 200, got ${meta.status}`)
-  assert(meta.body.status === 'alive', `metadata status should be alive, got ${meta.body.status}`)
-  assert(!('ciphertext' in meta.body), 'metadata must not leak ciphertext')
-  assert(!('ownerToken' in meta.body), 'metadata must not leak owner token')
-  console.log(`  ✓ metadata safe (${meta.body.format}, requiresPassphrase=${meta.body.requiresPassphrase})`)
+  const metaBody = meta.body as Record<string, unknown>
+  assert(metaBody.status === 'alive', `metadata status should be alive, got ${String(metaBody.status)}`)
+  assert(!('ciphertext' in metaBody) && !('ownerToken' in metaBody) && !('storagePath' in metaBody), 'metadata must expose no ciphertext, owner capability, or storage path')
+  console.log('  ✓ metadata is safe')
 
-  const preview = await request(`/api/pastes/${id}/consume`, {
-    method: 'POST',
-    body: JSON.stringify({ ownerToken: 'smoke-owner-token-0123456789abcdef' }),
-  })
-  assert(preview.status === 200 && preview.body.preview === true, 'owner preview should succeed')
-  console.log('  ✓ owner preview delivered (paste not burned)')
+  const preview = await request(`/api/pastes/${id}/consume`, { method: 'POST', body: JSON.stringify({ ownerToken: OWNER }) })
+  assert(preview.status === 200 && (preview.body as { preview?: boolean }).preview === true, 'owner preview should succeed')
+  console.log('  ✓ owner preview delivered without burn')
 
   const consume = await request(`/api/pastes/${id}/consume`, { method: 'POST', body: '{}' })
-  assert(consume.status === 200 && consume.body.preview === false, 'real consume should succeed')
-  console.log('  ✓ burn paste consumed exactly once')
+  assert(consume.status === 200 && (consume.body as { preview?: boolean }).preview === false, 'real consume should succeed')
+  const acknowledged = await request(`/api/pastes/${id}/acknowledge`, { method: 'POST', body: JSON.stringify({ proof: PROOF }) })
+  assert(acknowledged.status === 201, 'verified proof acknowledgement should succeed')
+  const replay = await request(`/api/pastes/${id}/acknowledge`, { method: 'POST', body: JSON.stringify({ proof: PROOF }) })
+  assert(replay.status === 404, 'proof replay must be rejected')
+  console.log('  ✓ burn paste consumed and cryptographically acknowledged once')
 
   const second = await request(`/api/pastes/${id}/consume`, { method: 'POST', body: '{}' })
-  assert(second.status === 410 && second.body.status === 'burned', 'second consume must be rejected (410 burned)')
-  console.log('  ✓ second consume rejected → 410 burned')
+  assert(second.status === 410 && (second.body as { status?: string }).status === 'burned', 'second consume must be rejected as burned')
 
-  const receipt = await request(`/api/pastes/${id}/receipt`, {
+  const receipt = await request(`/api/pastes/${id}/receipt`, { method: 'POST', body: JSON.stringify({ ownerToken: OWNER }) })
+  const receiptBody = receipt.body as { viewCount?: number; receiptAcknowledgedAt?: number | null }
+  assert(receipt.status === 200 && receiptBody.viewCount === 1 && Boolean(receiptBody.receiptAcknowledgedAt), 'receipt must show one verified acknowledgement')
+  console.log('  ✓ owner receipt reflects one verified encrypted-envelope open')
+
+  const fileCreated = await request('/api/pastes', {
     method: 'POST',
-    body: JSON.stringify({ ownerToken: 'smoke-owner-token-0123456789abcdef' }),
+    body: JSON.stringify(createBody({
+      format: 'file',
+      file: { storagePayload: Buffer.alloc(26).toString('base64'), size: 10, fileIv: b64url(Buffer.alloc(12, 0x0a)) },
+    })),
   })
-  assert(receipt.status === 200 && receipt.body.viewCount >= 2, 'receipt should show view count')
-  console.log(`  ✓ receipt viewCount=${receipt.body.viewCount}`)
+  assert(fileCreated.status === 201, 'file paste should be created')
+  const fileId = (fileCreated.body as { id: string }).id
+  const fileConsume = await request(`/api/pastes/${fileId}/consume`, { method: 'POST', body: '{}' })
+  const fileLease = (fileConsume.body as { fileLease?: { token?: string } }).fileLease
+  assert(fileConsume.status === 200 && fileLease?.token, 'file consume should issue a private lease')
+  assert(!('storagePath' in (fileConsume.body as Record<string, unknown>)), 'file consume must not expose storage path')
+  const downloaded = await binary(`/api/pastes/${fileId}/file`, { token: fileLease.token })
+  assert(downloaded.status === 200 && downloaded.bytes.byteLength === 26 && downloaded.headers.get('cache-control')?.includes('no-store'), 'private file lease should deliver ciphertext once')
+  const fileReplay = await request(`/api/pastes/${fileId}/file`, { method: 'POST', body: JSON.stringify({ token: fileLease.token }) })
+  assert(fileReplay.status === 404, 'file lease replay must be rejected')
+  console.log('  ✓ private encrypted file lease is one-use and pathless')
 
-  const draft = await request('/api/drafts', { method: 'POST', body: JSON.stringify({ content: 'hello' }) })
-  assert(draft.status === 201, `draft create should be 201, got ${draft.status}`)
-  const sealed = await request(`/api/drafts/${draft.body.roomId}/seal`, {
-    method: 'DELETE',
-    body: JSON.stringify({ ownerToken: draft.body.ownerToken }),
+  const guardianCreated = await request('/api/pastes', {
+    method: 'POST',
+    body: JSON.stringify(createBody({ guardian: { threshold: 2, total: 3, verifier: proofHash(CAPABILITY) } })),
   })
+  assert(guardianCreated.status === 201, 'guardian-enabled paste should be created')
+  const guardianId = (guardianCreated.body as { id: string }).id
+  const guardianWipe = await request(`/api/pastes/${guardianId}/guardian-wipe`, { method: 'POST', body: JSON.stringify({ capability: CAPABILITY }) })
+  assert(guardianWipe.status === 204, 'guardian verifier-matched wipe should succeed')
+  assert((await request(`/api/pastes/${guardianId}`)).status === 404, 'guardian-wiped paste should be gone')
+  console.log('  ✓ Guardian Wipe revokes a verifier-matched server copy')
+
+  const draft = await request('/api/drafts', { method: 'POST', body: JSON.stringify({ content: 'synthetic draft' }) })
+  assert(draft.status === 201, 'draft create should succeed')
+  const draftBody = draft.body as { roomId: string; ownerToken: string }
+  const sealed = await request(`/api/drafts/${draftBody.roomId}/seal`, { method: 'DELETE', body: JSON.stringify({ ownerToken: draftBody.ownerToken }) })
   assert(sealed.status === 204, 'draft seal should succeed')
   console.log('  ✓ draft room created and sealed')
 
-  const wiper = await request('/api/pastes', {
-    method: 'POST',
-    body: JSON.stringify({
-      ciphertext: Buffer.from('wipe-test').toString('base64'),
-      salt: Buffer.from('wipe-test-salt').toString('base64'),
-      iv: Buffer.from('wipe-test-iv').toString('base64'),
-      iterations: 0,
-      kdf: 'hkdf',
-      alg: 'aes-256-gcm',
-      format: 'text',
-      language: null,
-      burnAfterRead: false,
-      deadSwitchDays: null,
-      ttlSeconds: 0,
-      ownerToken: 'smoke-owner-token-0123456789abcdef',
-    }),
-  })
-  const wipe = await request(`/api/pastes/${wiper.body.id}`, {
-    method: 'DELETE',
-    body: JSON.stringify({ ownerToken: 'smoke-owner-token-0123456789abcdef' }),
-  })
-  assert(wipe.status === 204, 'remote wipe should succeed')
-  const gone = await request(`/api/pastes/${wiper.body.id}`)
-  assert(gone.status === 404, 'wiped paste should be gone')
-  console.log('  ✓ remote wipe destroys the paste')
+  const wiper = await request('/api/pastes', { method: 'POST', body: JSON.stringify(createBody({ ttlSeconds: 0 })) })
+  assert(wiper.status === 201, 'wipe test paste should be created')
+  const wipeId = (wiper.body as { id: string }).id
+  const wipe = await request(`/api/pastes/${wipeId}`, { method: 'DELETE', body: JSON.stringify({ ownerToken: OWNER }) })
+  assert(wipe.status === 204 && (await request(`/api/pastes/${wipeId}`)).status === 404, 'owner remote wipe should succeed')
+  console.log('  ✓ owner remote wipe destroys the paste')
 
   console.log('\n✅ ALL SMOKE TESTS PASSED')
 }
 
-main().catch((err) => {
-  console.error(err)
-  console.error('\nHint: is the API running? `npm run dev` — and did you run the SQL migration?')
+main().catch((error) => {
+  console.error(error)
+  console.error('\nHint: is the API running, has migration 005 been applied, and is the deployment READY?')
   process.exit(1)
 })

@@ -18,7 +18,7 @@ Use this checklist immediately before sending the GitHub repository and any priv
 | Criterion | Submission evidence |
 | --- | --- |
 | Problem Understanding & Core Functionality | `README.md`, `docs/EVALUATION.md`, live compose/share/read workflow. |
-| Innovation & Meaningful Differentiation | `docs/COMPARISON.md`, seal fingerprints, passphrase gate, encrypted files, dead switch, and sender controls. |
+| Innovation & Meaningful Differentiation | `docs/COMPARISON.md`, proof-based receipts, private one-use encrypted-file leases, Guardian Wipe threshold revocation, seal fingerprints, passphrase gate, dead switch, and sender controls. |
 | Technical Implementation & Architecture | `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, API/store source, Vercel functions, static CSP, and owner-only SQL migrations. |
 | User Experience & Accessibility | README screenshots, theme support, session-aware protected routes, keyboard command palette, skip link, semantic controls, clear state messages, and axe evidence. |
 | Performance & Reliability / Demo Quality | `docs/TESTING.md`, live smoke command, health/version endpoint, request IDs, timing, static-header check, bundle budget, CI, protected maintenance, and Vercel deployment. |
@@ -46,6 +46,8 @@ npm run test:headers
 | `https://lock-note-sigma.vercel.app/api/health` | `ok: true`, `store: "supabase"`, and a safe `version` value. |
 | GitHub sign-in | Returns through `/auth/callback` to the requested same-origin private route. |
 | Private profile data | `003_profiles_and_contacts.sql` is applied; bio/contact operations work for the authenticated owner only. |
+| Verified delivery/private files | `005_verified_delivery_and_guardian_wipe.sql` is applied; a fresh proof receipt succeeds once, `secrets` is private, and a file lease cannot be replayed. |
+| Guardian Wipe | A 2-of-3 quorum removes a synthetic test note at `/guardian-wipe`; trustee cards are never shown in the submitted recording or committed to Git. |
 | Header policy | Production root response includes CSP, Permissions Policy, `nosniff`, COOP, CORP, and referrer policy. |
 | CI evidence | The `Quality gate` workflow is green; `Production smoke` is available for daily/manual verification. |
 | Deep link refresh | `/paste/:id` and `/auth/callback` do not become Vercel 404 pages. |
@@ -70,3 +72,4 @@ Provide the following:
 3. Optional demonstration video URL, if the evaluation format requires it.
 4. Private `.env` only if the evaluator explicitly requires a runnable local deployment; start from `.env.submission.template`.
 5. This repository checklist and [DEMO.md](DEMO.md) for the evaluation walkthrough.
+6. The green `Quality gate` run and the production smoke output after migration `005`.

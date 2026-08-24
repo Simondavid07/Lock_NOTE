@@ -28,7 +28,7 @@ function requestIdFromHeader(value: string | undefined): string {
 function normalizedApiRoute(path: string): string {
   if (path === '/api' || path === '/api/health' || path === '/api/pastes' || path === '/api/drafts') return path
   if (/^\/api\/pastes\/[^/]+$/.test(path)) return '/api/pastes/:id'
-  if (/^\/api\/pastes\/[^/]+\/(consume|viewed|receipt|status)$/.test(path)) return '/api/pastes/:id/:operation'
+  if (/^\/api\/pastes\/[^/]+\/(consume|file|acknowledge|receipt|guardian-wipe|status)$/.test(path)) return '/api/pastes/:id/:operation'
   if (/^\/api\/drafts\/[^/]+$/.test(path)) return '/api/drafts/:roomId'
   if (/^\/api\/drafts\/[^/]+\/seal$/.test(path)) return '/api/drafts/:roomId/seal'
   if (path === '/api/maintenance/purge') return '/api/maintenance/purge'
@@ -106,8 +106,10 @@ export function createApp(deps: AppDeps): Express {
         'POST /api/pastes',
         'GET /api/pastes/:id',
         'POST /api/pastes/:id/consume',
-        'POST /api/pastes/:id/viewed',
+        'POST /api/pastes/:id/file',
+        'POST /api/pastes/:id/acknowledge',
         'POST /api/pastes/:id/receipt',
+        'POST /api/pastes/:id/guardian-wipe',
         'DELETE /api/pastes/:id',
         'GET /api/pastes/:id/status',
         'POST /api/drafts',

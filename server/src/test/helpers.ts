@@ -4,6 +4,7 @@ import { createApp } from '../app.js'
 import { MemoryStore } from '../memory-store.js'
 import { MemoryFileStore } from '../blob-store.js'
 import { MemoryAuditSink } from '../audit.js'
+import { sha256Base64url } from '../util.js'
 
 export interface TestContext {
   app: Express
@@ -35,13 +36,14 @@ export function makeTestApp(): TestContext {
 }
 
 export const api = request
+export const TEST_RECEIPT_PROOF = 'CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws'
 
 /** Build a valid create payload for the API tests. */
 export function createPayload(overrides: Record<string, unknown> = {}) {
   return {
     ciphertext: 'bXktY2lwaGVydGV4dC1wYXlsb2FkLW9mLXplcm8ta25vd2xlZGdl',
-    salt: 'c2FsdC1ieXRlcy1mb3Ita2RmLXNhbHQtb25seQ',
-    iv: 'aXYtZGF0YS1mb3ItYWVzLWdj',
+    salt: 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc',
+    iv: 'CQkJCQkJCQkJCQkJ',
     iterations: 0,
     kdf: 'hkdf',
     alg: 'aes-256-gcm',
@@ -50,7 +52,8 @@ export function createPayload(overrides: Record<string, unknown> = {}) {
     burnAfterRead: false,
     deadSwitchDays: null,
     ttlSeconds: 0,
-    ownerToken: 'owner-token-for-testing-purposes-123456',
+    ownerToken: 'MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0',
+    receiptProofHash: sha256Base64url(TEST_RECEIPT_PROOF),
     ...overrides,
   }
 }

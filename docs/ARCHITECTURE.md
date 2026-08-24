@@ -14,7 +14,7 @@ The central invariant is that the backend may store, route, delete, and account 
 
 ```mermaid
 flowchart LR
-    Sender[Sender browser\nReact + Web Crypto] -->|ciphertext, IV, salt, public metadata| API[Lock Note API\nExpress on Vercel]
+    Sender[Sender browser\nReact + Web Crypto] -->|ciphertext, fixed KDF inputs, hash-only verifiers| API[Lock Note API\nExpress on Vercel]
     Sender -->|fragment-keyed share URL| Recipient[Recipient browser\nReact + Web Crypto]
     Recipient -->|paste id and optional owner capability| API
     API --> Store[Store abstraction]
@@ -30,8 +30,8 @@ flowchart LR
 | Boundary | Technology | Responsibility |
 | --- | --- | --- |
 | Browser client | React 19, TypeScript, Vite, Web Crypto API | Collects note content, derives encryption keys, encrypts/decrypts locally, manages share fragments, renders UX, and hosts Auth/Reatime client integration. |
-| API | Express 5, Zod, Helmet, rate limiting | Validates requests, performs lifecycle transitions, verifies owner capabilities, emits safe receipts, deletes encrypted objects, and exposes health state. |
-| Persistence | Supabase Postgres and Storage | Holds ciphertext envelopes, encrypted file blobs, lifecycle metadata, draft records, and privacy-safe events. |
+| API | Express 5, Zod, Helmet, rate limiting | Enforces fixed envelope policy, performs lifecycle transitions, verifies owner/guardian hash verifiers, issues/redeems private one-use file leases, emits proof-based receipt state, deletes encrypted objects, and exposes health state. |
+| Persistence | Supabase Postgres and private Storage | Holds ciphertext envelopes, encrypted file blobs, hash-only verifiers, one-use lease state, lifecycle metadata, draft records, and privacy-safe events. |
 | Identity and collaboration | Supabase Auth and Realtime | Manages GitHub/email sessions and temporary pre-seal presence/broadcast collaboration. |
 | Deployment | Vercel | Serves the Vite app, hosts `/api` functions, applies production variables, and invokes protected maintenance. |
 
@@ -81,22 +81,59 @@ The fragment is processed by the browser and is not included in normal HTTP requ
 | Key derivation hardness | PBKDF2 uses 600,000 iterations | Raises the cost of passphrase guessing. |
 | Additional authenticated data | Paste ID and protocol domain separator | Detects ciphertext or envelope substitution between note identifiers. |
 | Per-note randomness | Fresh secret material, salt, and IV | Prevents deterministic encryption output across notes. |
-| File handling | File is encrypted before Supabase Storage upload | Keeps Storage objects as encrypted blobs rather than plaintext attachments. |
+| File handling | File is encrypted before private Supabase Storage upload | Keeps Storage objects as encrypted blobs rather than plaintext attachments or public URLs. |
+| Delivery proof | A random 32-byte proof is encrypted inside a v2 envelope; only its SHA-256 base64url verifier is stored | Lets the API record one verified encrypted-envelope acknowledgement without receiving the raw proof at creation. |
+| Guardian Wipe | A separate random revocation capability is split in the browser; only its SHA-256 verifier is stored | Lets a trustee quorum revoke future server delivery without receiving a decryption key or content key. |
 
 The detailed trust model, threat scenarios, and limitations are documented in [SECURITY.md](SECURITY.md).
+
+## Verified delivery, private files, and Guardian Wipe
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as Sender browser
+    participant R as Recipient/guardian browser
+    participant A as Lock Note API
+    participant P as Supabase Postgres
+    participant O as Private Storage
+
+    S->>S: Encrypt v2 envelope containing random receipt proof
+    S->>S: Create separate Guardian Wipe capability and cards (optional)
+    S->>A: Ciphertext + SHA-256(proof) + SHA-256(wipe capability)
+    A->>P: Store ciphertext and hash-only verifiers
+    R->>A: Consume encrypted envelope
+    alt encrypted file
+        A->>P: Persist 60-second one-use lease hash (with burn, atomically)
+        A-->>R: Envelope + lease token; never Storage path
+        R->>A: Redeem lease once
+        A->>O: Read encrypted bytes through service role
+        A-->>R: Ciphertext bytes with no-store
+    end
+    R->>R: Decrypt locally and recover proof
+    R->>A: Raw proof after successful local decrypt
+    A->>P: Match hash once and record verified acknowledgement
+    opt Guardian revocation
+        R->>R: Reconstruct separate capability from K-of-N cards locally
+        R->>A: Reconstructed capability only
+        A->>P: Match guardian hash and delete server record
+    end
+```
+
+A delivery receipt establishes an authenticated envelope-open acknowledgement, not human comprehension. Guardian cards neither include nor reconstruct a content key, delivery URL, passphrase, plaintext, or receipt proof. A private file lease is a short-lived delivery capability, not a decryption key; its token is removed on successful redemption.
 
 ## Data model and lifecycle
 
 | Entity | Contains | Does not contain |
 | --- | --- | --- |
-| `pastes` | Ciphertext, IV, public salt, format metadata, expiry/dead-switch policy, encrypted-file path, view metadata, owner capability, burned state | Plaintext note content or a fragment-derived decryption key. |
+| `pastes` | Ciphertext, fixed KDF inputs, format metadata, expiry/dead-switch policy, server-only encrypted-file path, receipt-proof hash, receipt state, Guardian Wipe hash/policy, hash-only file lease state, owner capability, burned state | Plaintext note content, fragment-derived decryption key, raw receipt proof, Guardian capability/share, or a public file URL. |
 | `events` | Minimal lifecycle and receipt signals | Plaintext content. |
 | `drafts` | Short-lived pre-seal collaboration state | Sealed note key material. |
-| `secrets` Storage bucket | Encrypted file ciphertext | Plaintext file data or a decryption key. |
+| `secrets` private Storage bucket | Encrypted file ciphertext, readable only by the server-side service role | Plaintext file data, a decryption key, or browser direct-object access. |
 | `profiles` | Opt-in display name, provider username, avatar URL, and a short bio for the authenticated owner | Notes, ciphertext, share URLs, URL fragments, passphrases, owner capabilities, or cryptographic material. |
 | `vault_contacts` | Authenticated owner’s private GitHub username shortcuts | Recipient access grants, collaboration permissions, notes, share URLs, or key material. |
 
-The API treats a paste as a lifecycle state machine. It may be active, expired, burned after a successful recipient consume, or withdrawn by its owner capability. Owner preview is explicitly differentiated from recipient consume so the sender can inspect the note without accidentally burning it.
+The API treats a paste as a lifecycle state machine. It may be active, expired, burned after a successful recipient consume, or withdrawn by an owner capability or Guardian Wipe quorum. Owner preview is explicitly differentiated from recipient consume so the sender can inspect the note without accidentally burning it. For a burn-after-read encrypted file, a conditional Postgres update marks the record burned and persists its lease hash together, avoiding the prior failure mode where a record could burn before any redeemable file lease existed. For a non-burn file, a transient lease-issuance failure remains retryable because the record stays active.
 
 ## Collaboration trust boundary
 

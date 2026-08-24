@@ -3,14 +3,15 @@ import type {
   ConsumeOutcome,
   CreatePasteInput,
   DraftRecord,
+  GuardianPolicy,
   PasteRecord,
   PasteStatus,
   ReceiptInfo,
 } from './types.js'
 import type { DraftStore, PasteStore, StoreHealth } from './store.js'
-import { computeStatus, isDead, lastActiveMs } from './store.js'
-import { safeEqual } from './util.js'
-import { toMetadata, toReceipt } from './helpers.js'
+import { computeStatus, isDead } from './store.js'
+import { randomToken, safeEqual, sha256Base64url } from './util.js'
+import { toReceipt } from './helpers.js'
 
 interface PasteRow {
   id: string
@@ -32,10 +33,17 @@ interface PasteRow {
   first_viewed_at: number | null
   last_viewed_at: number | null
   owner_token: string
+  receipt_proof_hash: string | null
+  receipt_acknowledged_at: number | null
+  guardian_verifier: string | null
+  guardian_threshold: number | null
+  guardian_total: number | null
+  file_lease_hash: string | null
+  file_lease_expires_at: number | null
   burned: boolean
 }
 
-function toRow(input: CreatePasteInput): Omit<PasteRow, 'view_count' | 'first_viewed_at' | 'last_viewed_at' | 'burned'> {
+function toRow(input: CreatePasteInput): Omit<PasteRow, 'view_count' | 'first_viewed_at' | 'last_viewed_at' | 'receipt_acknowledged_at' | 'burned'> {
   return {
     id: input.id,
     ciphertext: input.ciphertext,
@@ -53,7 +61,18 @@ function toRow(input: CreatePasteInput): Omit<PasteRow, 'view_count' | 'first_vi
     created_at: Date.now(),
     expires_at: input.expiresAt,
     owner_token: input.ownerToken,
+    receipt_proof_hash: input.receiptProofHash,
+    guardian_verifier: input.guardianVerifier,
+    guardian_threshold: input.guardianPolicy?.threshold ?? null,
+    guardian_total: input.guardianPolicy?.total ?? null,
+    file_lease_hash: null,
+    file_lease_expires_at: null,
   }
+}
+
+function guardianPolicyFromRow(row: PasteRow): GuardianPolicy | null {
+  if (!row.guardian_verifier || !row.guardian_threshold || !row.guardian_total) return null
+  return { threshold: row.guardian_threshold, total: row.guardian_total }
 }
 
 function fromRow(row: PasteRow): PasteRecord {
@@ -77,14 +96,15 @@ function fromRow(row: PasteRow): PasteRecord {
     firstViewedAt: row.first_viewed_at,
     lastViewedAt: row.last_viewed_at,
     ownerToken: row.owner_token,
+    receiptProofHash: row.receipt_proof_hash,
+    receiptAcknowledgedAt: row.receipt_acknowledged_at,
+    guardianVerifier: row.guardian_verifier,
+    guardianPolicy: guardianPolicyFromRow(row),
     burned: row.burned,
   }
 }
 
-/**
- * Production persistence backed by Supabase Postgres.
- * The server uses the service_role key — never exposed to browsers.
- */
+/** Production persistence backed by Supabase Postgres. Service-role access stays server-only. */
 export class SupabaseStore implements PasteStore {
   readonly kind = 'supabase' as const
   private client: SupabaseClient
@@ -98,8 +118,8 @@ export class SupabaseStore implements PasteStore {
       const { error } = await this.client.from('pastes').select('id').limit(1)
       if (error) return { ok: false, detail: error.message }
       return { ok: true, detail: 'supabase reachable' }
-    } catch (e) {
-      return { ok: false, detail: e instanceof Error ? e.message : String(e) }
+    } catch (error) {
+      return { ok: false, detail: error instanceof Error ? error.message : String(error) }
     }
   }
 
@@ -108,14 +128,9 @@ export class SupabaseStore implements PasteStore {
   }
 
   async create(input: CreatePasteInput): Promise<PasteRecord> {
-    const { data, error } = await this.client
-      .from('pastes')
-      .insert(toRow(input))
-      .select('*')
-      .single()
+    const { data, error } = await this.client.from('pastes').insert(toRow(input)).select('*').single()
     if (error) throw new Error(`supabase create failed: ${error.message}`)
-    const record = fromRow(data as PasteRow)
-    return record
+    return fromRow(data as PasteRow)
   }
 
   async get(id: string): Promise<PasteRecord | null> {
@@ -125,79 +140,124 @@ export class SupabaseStore implements PasteStore {
   }
 
   async consume(id: string, previewToken?: string | null): Promise<ConsumeOutcome> {
-    const row = await this.get(id)
-    if (!row) return { ok: false, status: 'gone' }
-
-    const nowMs = Date.now()
-    const status = computeStatus(row, nowMs)
+    const record = await this.get(id)
+    if (!record) return { ok: false, status: 'gone' }
+    const status = computeStatus(record, Date.now())
     if (status !== 'alive') return { ok: false, status }
 
-    const next = (record: PasteRecord): PasteRecord => {
-      record.viewCount += 1
-      record.firstViewedAt = record.firstViewedAt ?? nowMs
-      record.lastViewedAt = nowMs
-      return record
+    if (previewToken && safeEqual(previewToken, record.ownerToken)) {
+      return { ok: true, record, preview: true, status: 'alive', fileLease: null }
     }
+
+    if (!record.burnAfterRead) return { ok: true, record, preview: false, status: 'alive', fileLease: null }
+
+    // A burn-after-read file must not be marked burned before the recipient has
+    // a redeemable lease. Persist burn + hash-only lease in one conditional row
+    // update; if it loses the race, no lease is leaked and the record remains
+    // unavailable to the loser.
+    const fileLease = record.storagePath
+      ? { token: randomToken(24), expiresAt: Date.now() + 60_000 }
+      : null
     const patch = {
-      view_count: row.viewCount + 1,
-      first_viewed_at: row.firstViewedAt ?? nowMs,
-      last_viewed_at: nowMs,
+      burned: true,
+      ...(fileLease
+        ? { file_lease_hash: sha256Base64url(fileLease.token), file_lease_expires_at: fileLease.expiresAt }
+        : {}),
     }
-
-    if (previewToken && safeEqual(previewToken, row.ownerToken)) {
-      const { error } = await this.client.from('pastes').update(patch).eq('id', id)
-      if (error) throw new Error(`supabase preview failed: ${error.message}`)
-      return { ok: true, record: next(row), preview: true, status: 'alive' }
-    }
-
-    if (row.burnAfterRead) {
-      // Atomic exactly-once burn: only one concurrent consumer can win.
-      const { data, error } = await this.client
-        .from('pastes')
-        .update({ ...patch, burned: true })
-        .eq('id', id)
-        .eq('burned', false)
-        .select('*')
-        .maybeSingle()
-      if (error) throw new Error(`supabase consume failed: ${error.message}`)
-      if (!data) return { ok: false, status: 'burned' }
-      row.burned = true
-      return { ok: true, record: next(row), preview: false, status: 'alive' }
-    }
-
-    const { error } = await this.client.from('pastes').update(patch).eq('id', id)
-    if (error) throw new Error(`supabase consume failed: ${error.message}`)
-    return { ok: true, record: next(row), preview: false, status: 'alive' }
-  }
-
-  async viewed(id: string): Promise<{ viewCount: number } | null> {
-    const row = await this.get(id)
-    if (!row) return null
-    if (computeStatus(row, Date.now()) !== 'alive') return null
     const { data, error } = await this.client
       .from('pastes')
-      .update({ view_count: row.viewCount + 1, first_viewed_at: row.firstViewedAt ?? Date.now(), last_viewed_at: Date.now() })
+      .update(patch)
       .eq('id', id)
-      .select('view_count')
-      .single()
-    if (error) throw new Error(`supabase viewed failed: ${error.message}`)
-    return { viewCount: (data as { view_count: number }).view_count }
+      .eq('burned', false)
+      .select('*')
+      .maybeSingle()
+    if (error) throw new Error(`supabase consume failed: ${error.message}`)
+    if (!data) return { ok: false, status: 'burned' }
+    return { ok: true, record: fromRow(data as PasteRow), preview: false, status: 'alive', fileLease }
+  }
+
+  async issueFileLease(id: string): Promise<{ token: string; expiresAt: number } | null> {
+    const record = await this.get(id)
+    if (!record?.storagePath) return null
+    const token = randomToken(24)
+    const expiresAt = Date.now() + 60_000
+    const { data, error } = await this.client
+      .from('pastes')
+      .update({ file_lease_hash: sha256Base64url(token), file_lease_expires_at: expiresAt })
+      .eq('id', id)
+      .eq('storage_path', record.storagePath)
+      .select('id')
+      .maybeSingle()
+    if (error) throw new Error(`supabase file lease issue failed: ${error.message}`)
+    if (!data) return null
+    return { token, expiresAt }
+  }
+
+  async redeemFileLease(id: string, token: string): Promise<string | null> {
+    const nowMs = Date.now()
+    const { data, error } = await this.client
+      .from('pastes')
+      .update({ file_lease_hash: null, file_lease_expires_at: null })
+      .eq('id', id)
+      .eq('file_lease_hash', sha256Base64url(token))
+      .gte('file_lease_expires_at', nowMs)
+      .select('storage_path')
+      .maybeSingle()
+    if (error) throw new Error(`supabase file lease redemption failed: ${error.message}`)
+    return (data as { storage_path: string | null } | null)?.storage_path ?? null
+  }
+
+  /**
+   * Acknowledgement is deliberately idempotent: the first browser holding the
+   * decrypted proof wins; a replay, guessed proof, or second acknowledgement
+   * cannot alter the receipt or dead-switch activity.
+   */
+  async acknowledge(id: string, proof: string): Promise<{ acknowledgedAt: number } | null> {
+    const nowMs = Date.now()
+    const verifier = sha256Base64url(proof)
+    const { data, error } = await this.client
+      .from('pastes')
+      .update({
+        view_count: 1,
+        first_viewed_at: nowMs,
+        last_viewed_at: nowMs,
+        receipt_acknowledged_at: nowMs,
+      })
+      .eq('id', id)
+      .eq('receipt_proof_hash', verifier)
+      .is('receipt_acknowledged_at', null)
+      .select('receipt_acknowledged_at')
+      .maybeSingle()
+    if (error) throw new Error(`supabase acknowledgement failed: ${error.message}`)
+    if (!data) return null
+    return { acknowledgedAt: (data as { receipt_acknowledged_at: number }).receipt_acknowledged_at }
   }
 
   async destroy(id: string, ownerToken: string): Promise<boolean> {
-    const row = await this.get(id)
-    if (!row) return false
-    if (!safeEqual(ownerToken, row.ownerToken)) return false
-    const { error } = await this.client.from('pastes').delete().eq('id', id).eq('owner_token', ownerToken)
+    const record = await this.get(id)
+    if (!record || !safeEqual(ownerToken, record.ownerToken)) return false
+    const { data, error } = await this.client.from('pastes').delete().eq('id', id).eq('owner_token', ownerToken).select('id').maybeSingle()
     if (error) throw new Error(`supabase destroy failed: ${error.message}`)
-    return true
+    return Boolean(data)
+  }
+
+  async guardianDestroy(id: string, capability: string): Promise<boolean> {
+    const verifier = sha256Base64url(capability)
+    const { data, error } = await this.client
+      .from('pastes')
+      .delete()
+      .eq('id', id)
+      .eq('guardian_verifier', verifier)
+      .select('id')
+      .maybeSingle()
+    if (error) throw new Error(`supabase guardian destroy failed: ${error.message}`)
+    return Boolean(data)
   }
 
   async receipt(id: string, ownerToken: string): Promise<ReceiptInfo | null> {
-    const row = await this.get(id)
-    if (!row) return null
-    if (!safeEqual(ownerToken, row.ownerToken)) return null
-    return toReceipt(row, Date.now())
+    const record = await this.get(id)
+    if (!record || !safeEqual(ownerToken, record.ownerToken)) return null
+    return toReceipt(record, Date.now())
   }
 
   async status(id: string): Promise<PasteStatus> {
@@ -206,30 +266,17 @@ export class SupabaseStore implements PasteStore {
 
   async purgeExpired(): Promise<number> {
     const nowMs = Date.now()
-
-    // 1. Time-based expiry (simple range filters).
-    const { data: expired, error: expErr } = await this.client
-      .from('pastes')
-      .select('id')
-      .not('expires_at', 'is', null)
-      .lte('expires_at', nowMs)
+    const { data: expired, error: expErr } = await this.client.from('pastes').select('id').not('expires_at', 'is', null).lte('expires_at', nowMs)
     if (expErr) throw new Error(`supabase purge select (expired) failed: ${expErr.message}`)
 
-    // 2. Dead-switch: compute per-row cutoffs in JS (PostgREST cannot
-    //    express `coalesce(last_viewed_at, created_at) + days * 86400000`).
-    const { data: switchers, error: swErr } = await this.client
+    const { data: switchers, error: switchErr } = await this.client
       .from('pastes')
       .select('id,dead_switch_days,last_viewed_at,created_at')
       .not('dead_switch_days', 'is', null)
-    if (swErr) throw new Error(`supabase purge select (dead) failed: ${swErr.message}`)
+    if (switchErr) throw new Error(`supabase purge select (dead) failed: ${switchErr.message}`)
 
-    const ids = new Set<string>((expired ?? []).map((r) => (r as { id: string }).id))
-    for (const row of (switchers ?? []) as Array<{
-      id: string
-      dead_switch_days: number
-      last_viewed_at: number | null
-      created_at: number
-    }>) {
+    const ids = new Set<string>((expired ?? []).map((row) => (row as { id: string }).id))
+    for (const row of (switchers ?? []) as Array<{ id: string; dead_switch_days: number; last_viewed_at: number | null; created_at: number }>) {
       const lastActive = row.last_viewed_at ?? row.created_at
       if (nowMs - lastActive > row.dead_switch_days * 86_400_000) ids.add(row.id)
     }
@@ -259,7 +306,7 @@ function draftFromRow(row: DraftRow): DraftRecord {
   }
 }
 
-/** Ephemeral draft rooms backed by Supabase (RLS allows anon reads/writes). */
+/** Ephemeral draft rooms backed by Supabase through server-only service-role access. */
 export class SupabaseDraftStore implements DraftStore {
   readonly kind = 'supabase' as const
   private client: SupabaseClient
@@ -297,9 +344,8 @@ export class SupabaseDraftStore implements DraftStore {
   }
 
   async sealDraft(roomId: string, ownerToken: string): Promise<boolean> {
-    const d = await this.getDraft(roomId)
-    if (!d) return false
-    if (!safeEqual(ownerToken, d.ownerToken)) return false
+    const draft = await this.getDraft(roomId)
+    if (!draft || !safeEqual(ownerToken, draft.ownerToken)) return false
     const { error } = await this.client.from('drafts').delete().eq('room_id', roomId)
     if (error) throw new Error(`supabase draft seal failed: ${error.message}`)
     return true
@@ -309,10 +355,10 @@ export class SupabaseDraftStore implements DraftStore {
     const cutoff = Date.now() - maxAgeMs
     const { data, error } = await this.client.from('drafts').select('room_id').lt('updated_at', cutoff)
     if (error) throw new Error(`supabase draft purge select failed: ${error.message}`)
-    const ids = (data ?? []).map((d) => (d as { room_id: string }).room_id)
+    const ids = (data ?? []).map((draft) => (draft as { room_id: string }).room_id)
     if (ids.length === 0) return 0
-    const { error: delErr } = await this.client.from('drafts').delete().in('room_id', ids)
-    if (delErr) throw new Error(`supabase draft purge delete failed: ${delErr.message}`)
+    const { error: deleteError } = await this.client.from('drafts').delete().in('room_id', ids)
+    if (deleteError) throw new Error(`supabase draft purge delete failed: ${deleteError.message}`)
     return ids.length
   }
 }

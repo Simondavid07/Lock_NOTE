@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest'
-import { makeTestApp, createPayload, api, type TestContext } from './helpers.js'
+import { makeTestApp, createPayload, api, TEST_RECEIPT_PROOF, type TestContext } from './helpers.js'
+import { sha256Base64url } from '../util.js'
 
 describe('consume / burn-after-read', () => {
   let ctx: TestContext
@@ -82,11 +83,92 @@ describe('remote wipe (DELETE)', () => {
     const created = await api(ctx.app).post('/api/pastes').send(createPayload())
     const id = created.body.id as string
 
-    const res = await api(ctx.app).delete(`/api/pastes/${id}`).send({ ownerToken: 'wrong-token-for-testing-0000' })
+    const res = await api(ctx.app).delete(`/api/pastes/${id}`).send({ ownerToken: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' })
     expect(res.status).toBe(403)
 
     const meta = await api(ctx.app).get(`/api/pastes/${id}`)
     expect(meta.status).toBe(200)
+  })
+})
+
+describe('private encrypted-file delivery', () => {
+  let ctx: TestContext
+
+  beforeEach(() => {
+    ctx = makeTestApp()
+  })
+
+  it('returns a one-use private file lease after consume without exposing storagePath', async () => {
+    const created = await api(ctx.app).post('/api/pastes').send(createPayload({
+      format: 'file',
+      file: { storagePayload: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=', size: 10, fileIv: 'CQkJCQkJCQkJCQkJ' },
+    }))
+    const id = created.body.id as string
+
+    const consumed = await api(ctx.app).post(`/api/pastes/${id}/consume`).send({})
+    expect(consumed.status).toBe(200)
+    expect(consumed.body.storagePath).toBeUndefined()
+    expect(consumed.body.fileLease?.token).toMatch(/^[A-Za-z0-9_-]{32}$/)
+
+    const downloaded = await api(ctx.app).post(`/api/pastes/${id}/file`).send({ token: consumed.body.fileLease.token })
+    expect(downloaded.status).toBe(200)
+    expect(downloaded.headers['cache-control']).toContain('no-store')
+    expect(downloaded.body).toHaveLength(26)
+
+    const replay = await api(ctx.app).post(`/api/pastes/${id}/file`).send({ token: consumed.body.fileLease.token })
+    expect(replay.status).toBe(404)
+  })
+
+  it('issues a burn-after-read file lease with the burn transition', async () => {
+    const created = await api(ctx.app).post('/api/pastes').send(createPayload({
+      format: 'file',
+      burnAfterRead: true,
+      file: { storagePayload: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=', size: 10, fileIv: 'CQkJCQkJCQkJCQkJ' },
+    }))
+    const id = created.body.id as string
+    const consumed = await api(ctx.app).post(`/api/pastes/${id}/consume`).send({})
+    expect(consumed.status).toBe(200)
+    expect(consumed.body.fileLease?.token).toBeTruthy()
+    expect((await api(ctx.app).post(`/api/pastes/${id}/consume`).send({})).status).toBe(410)
+
+    const downloaded = await api(ctx.app).post(`/api/pastes/${id}/file`).send({ token: consumed.body.fileLease.token })
+    expect(downloaded.status).toBe(200)
+  })
+
+  it('rejects an expired file lease without exposing a replacement capability', async () => {
+    const created = await api(ctx.app).post('/api/pastes').send(createPayload({
+      format: 'file',
+      file: { storagePayload: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=', size: 10, fileIv: 'CQkJCQkJCQkJCQkJ' },
+    }))
+    const id = created.body.id as string
+    const consumed = await api(ctx.app).post(`/api/pastes/${id}/consume`).send({})
+
+    ctx.advance(61_000)
+    const expired = await api(ctx.app).post(`/api/pastes/${id}/file`).send({ token: consumed.body.fileLease.token })
+    expect(expired.status).toBe(404)
+    expect(expired.body.token).toBeUndefined()
+  })
+})
+
+describe('Guardian Wipe', () => {
+  let ctx: TestContext
+
+  beforeEach(() => {
+    ctx = makeTestApp()
+  })
+
+  it('destroys only when the verifier-matched guardian capability is supplied', async () => {
+    const capability = 'DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0'
+    const created = await api(ctx.app).post('/api/pastes').send(createPayload({
+      guardian: { threshold: 2, total: 3, verifier: sha256Base64url(capability) },
+    }))
+    const id = created.body.id as string
+
+    const denied = await api(ctx.app).post(`/api/pastes/${id}/guardian-wipe`).send({ capability: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' })
+    expect(denied.status).toBe(403)
+    const removed = await api(ctx.app).post(`/api/pastes/${id}/guardian-wipe`).send({ capability })
+    expect(removed.status).toBe(204)
+    expect((await api(ctx.app).get(`/api/pastes/${id}`)).status).toBe(404)
   })
 })
 
@@ -97,23 +179,30 @@ describe('read receipts', () => {
     ctx = makeTestApp()
   })
 
-  it('tracks views and only reveals them to the owner', async () => {
+  it('records one verified acknowledgement and rejects guessed or replayed proofs', async () => {
     const created = await api(ctx.app).post('/api/pastes').send(createPayload())
     const id = created.body.id as string
 
     await api(ctx.app).post(`/api/pastes/${id}/consume`).send({})
-    await api(ctx.app).post(`/api/pastes/${id}/viewed`).send({})
+    const guessed = await api(ctx.app).post(`/api/pastes/${id}/acknowledge`).send({ proof: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' })
+    expect(guessed.status).toBe(404)
+
+    const acknowledged = await api(ctx.app).post(`/api/pastes/${id}/acknowledge`).send({ proof: TEST_RECEIPT_PROOF })
+    expect(acknowledged.status).toBe(201)
+    const replay = await api(ctx.app).post(`/api/pastes/${id}/acknowledge`).send({ proof: TEST_RECEIPT_PROOF })
+    expect(replay.status).toBe(404)
 
     const denied = await api(ctx.app)
       .post(`/api/pastes/${id}/receipt`)
-      .send({ ownerToken: 'wrong-token-for-testing-0000' })
+      .send({ ownerToken: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' })
     expect(denied.status).toBe(404)
 
     const receipt = await api(ctx.app)
       .post(`/api/pastes/${id}/receipt`)
       .send({ ownerToken: created.body.ownerToken })
     expect(receipt.status).toBe(200)
-    expect(receipt.body.viewCount).toBe(2)
+    expect(receipt.body.viewCount).toBe(1)
+    expect(receipt.body.receiptAcknowledgedAt).toBeGreaterThan(0)
     expect(receipt.body.firstViewedAt).toBeGreaterThan(0)
   })
 })
@@ -155,8 +244,9 @@ describe('expiry & dead switch', () => {
     const created = await api(ctx.app).post('/api/pastes').send(createPayload({ deadSwitchDays: 1 }))
     const id = created.body.id as string
 
-    // A view resets the clock...
+    // Only a successful decrypted-proof acknowledgement resets the clock.
     await api(ctx.app).post(`/api/pastes/${id}/consume`).send({})
+    await api(ctx.app).post(`/api/pastes/${id}/acknowledge`).send({ proof: TEST_RECEIPT_PROOF })
     ctx.advance(23 * 3_600_000) // 23h later — still alive
     const alive = await api(ctx.app).get(`/api/pastes/${id}`)
     expect(alive.body.status).toBe('alive')
@@ -210,7 +300,7 @@ describe('draft rooms', () => {
     const created = await api(ctx.app).post('/api/drafts').send({})
     const res = await api(ctx.app)
       .delete(`/api/drafts/${created.body.roomId}/seal`)
-      .send({ ownerToken: 'wrong-token-for-testing-0000' })
+      .send({ ownerToken: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' })
     expect(res.status).toBe(403)
   })
 })

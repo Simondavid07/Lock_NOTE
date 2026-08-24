@@ -3,6 +3,10 @@ import { base64urlToBytes, bytesToBase64url, bytesToUtf8, utf8ToBytes, toArrayBu
 export const ALG = 'aes-256-gcm'
 export const PROTOCOL = 'locknote/v1'
 export const PBKDF2_ITERATIONS = 600_000
+export const SALT_BYTES = 32
+export const IV_BYTES = 12
+export const RECEIPT_PROOF_BYTES = 32
+export const GUARDIAN_CAPABILITY_BYTES = 32
 
 export type KdfKind = 'hkdf' | 'pbkdf2'
 
@@ -40,6 +44,9 @@ export async function deriveEncryptionKey(
   params: KeyParams,
 ): Promise<CryptoKey> {
   const { salt, kdf, iterations } = params
+  if (salt.byteLength !== SALT_BYTES) throw new IntegrityError('The encrypted envelope has an invalid salt.')
+  if (kdf === 'hkdf' && iterations !== 0) throw new IntegrityError('The encrypted envelope has an invalid HKDF policy.')
+  if (kdf === 'pbkdf2' && iterations !== PBKDF2_ITERATIONS) throw new IntegrityError('The encrypted envelope has an unsupported PBKDF2 policy.')
   if (kdf === 'pbkdf2') {
     if (!passphrase) throw new Error('A passphrase is required for this paste.')
     const material = await crypto.subtle.importKey('raw', toArrayBuffer(utf8ToBytes(passphrase)), 'PBKDF2', false, ['deriveKey'])
@@ -103,13 +110,16 @@ export function aadFor(pasteId: string): Uint8Array {
 
 /** Encrypted JSON envelope shared by every secret type. */
 export interface ContentEnvelope {
-  v: 1
+  /** Version 2 adds a random read proof that is authenticated inside ciphertext. */
+  v: 1 | 2
   title?: string
   content?: string
   language?: string
   /** File secrets only — name/mime live here so the server never sees them. */
   name?: string
   mime?: string
+  /** Present only on v2 envelopes. Submitted after successful local decryption. */
+  receiptProof?: string
 }
 
 export async function sealContent(
@@ -129,20 +139,41 @@ export async function openContent(
 ): Promise<ContentEnvelope> {
   const plaintext = await decrypt(key, base64urlToBytes(ciphertextB64), base64urlToBytes(ivB64), aadFor(pasteId))
   const parsed: unknown = JSON.parse(bytesToUtf8(plaintext))
-  if (!parsed || typeof parsed !== 'object' || !('v' in parsed) || (parsed as ContentEnvelope).v !== 1) {
+  if (!parsed || typeof parsed !== 'object' || !('v' in parsed)) {
     throw new IntegrityError('Unsupported payload version.')
   }
-  return parsed as ContentEnvelope
+  const envelope = parsed as ContentEnvelope
+  if (envelope.v !== 1 && envelope.v !== 2) throw new IntegrityError('Unsupported payload version.')
+  if (envelope.v === 2 && (!envelope.receiptProof || !/^[A-Za-z0-9_-]{43}$/.test(envelope.receiptProof))) {
+    throw new IntegrityError('The encrypted envelope is missing its delivery proof.')
+  }
+  return envelope
 }
 
 /** Random 32-byte salt for the KDF (stored server-side; public). */
 export function generateSalt(): string {
-  return bytesToBase64url(crypto.getRandomValues(new Uint8Array(32)))
+  return bytesToBase64url(crypto.getRandomValues(new Uint8Array(SALT_BYTES)))
+}
+
+/** Random proof embedded only in the encrypted envelope for a verified-open acknowledgement. */
+export function generateReceiptProof(): string {
+  return bytesToBase64url(crypto.getRandomValues(new Uint8Array(RECEIPT_PROOF_BYTES)))
+}
+
+/** Random capability split only for Guardian Wipe; it is never the content key. */
+export function generateGuardianCapability(): string {
+  return bytesToBase64url(crypto.getRandomValues(new Uint8Array(GUARDIAN_CAPABILITY_BYTES)))
+}
+
+/** Browser-side SHA-256 verifier. The raw value never reaches the server. */
+export async function sha256Base64url(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', toArrayBuffer(utf8ToBytes(value)))
+  return bytesToBase64url(new Uint8Array(digest))
 }
 
 /** Random 12-byte IV (stored server-side; public). */
 export function generateIv(): string {
-  return bytesToBase64url(crypto.getRandomValues(new Uint8Array(12)))
+  return bytesToBase64url(crypto.getRandomValues(new Uint8Array(IV_BYTES)))
 }
 
 /** Fresh owner capability token (remote wipe / preview / receipts). */

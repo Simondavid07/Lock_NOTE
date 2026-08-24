@@ -8,6 +8,7 @@ Locknote is a zero-knowledge, self-destructing note-sharing application. It encr
 [![React](https://img.shields.io/badge/react-19-149ECA?logo=react&logoColor=white)](https://react.dev/)
 [![Supabase](https://img.shields.io/badge/supabase-persistence%20%2B%20auth-3FCF8E?logo=supabase&logoColor=white)](https://supabase.com/)
 [![Vercel](https://img.shields.io/badge/vercel-ready-000000?logo=vercel&logoColor=white)](https://vercel.com/)
+[![Quality gate](https://github.com/Simondavid07/Lock_NOTE/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/Simondavid07/Lock_NOTE/actions/workflows/quality.yml)
 
 ## Evaluation at a glance
 
@@ -16,7 +17,7 @@ Locknote is documented and tested as a complete submission rather than a visual 
 | Evaluation criterion | Review-ready evidence |
 | --- | --- |
 | **Problem Understanding & Core Functionality** | Browser-side encryption, fragment-keyed sharing, burn-on-read, expiry, remote withdrawal, encrypted files, and delivery receipts. |
-| **Innovation & Meaningful Differentiation** | Dead switches, seal fingerprints, passphrase gates, encrypted file envelopes, and pre-seal realtime collaboration. |
+| **Innovation & Meaningful Differentiation** | Proof-based delivery acknowledgements, private one-use encrypted-file leases, Guardian Wipe threshold revocation, dead switches, seal fingerprints, and pre-seal realtime collaboration. |
 | **Technical Implementation & Architecture** | React/Vite client, Web Crypto API, Express/Zod/Helmet API, Supabase Auth and owner-only RLS account tables, Vercel functions, static CSP, and typed tests. |
 | **User Experience & Accessibility** | Intentional compose-to-share workflow, theme support, session-aware protected routes, keyboard command palette, skip link, semantic controls, responsive views, actionable errors, and automated axe checks. |
 | **Performance & Reliability / Demo Quality** | Health/version readiness, request IDs and safe timing telemetry, validation, rate limits, protected maintenance, bundle budget, live smoke test, and automated CI. |
@@ -88,7 +89,7 @@ This flow keeps responsibilities clear: **GitHub verifies identity**, **Supabase
 | Resource | Link |
 | --- | --- |
 | Live application | `https://lock-note-sigma.vercel.app/` |
-| Video walkthrough | **Add your video link here:** `https://YOUR-DEMO-VIDEO-URL` |
+| Video walkthrough | **Recording handoff:** replace `https://YOUR-DEMO-VIDEO-URL` after recording the [five-minute demo script](docs/DEMO.md#recording-checklist). |
 | Evaluator demo script | [docs/DEMO.md](docs/DEMO.md) |
 | Rubric evidence guide | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Local application | `http://localhost:5173` |
@@ -106,8 +107,9 @@ This flow keeps responsibilities clear: **GitHub verifies identity**, **Supabase
 | **Burn after reading** | A note can be consumed exactly once; a successful non-owner read makes further reads unavailable. |
 | **Expiry and dead switches** | Notes can expire at a set time or disappear after an inactivity window. |
 | **Remote withdrawal** | The owner capability lets a sender delete a still-active note and its encrypted file blob. |
-| **Encrypted file envelopes** | Files are encrypted in the browser and stored as encrypted objects in the Supabase `secrets` bucket. |
-| **Receipts and owner preview** | The owner can preview a note without burning it, inspect delivery metadata, and retrieve view receipts. |
+| **Private encrypted-file delivery** | Files are encrypted in the browser. The Storage bucket is non-public; only a successful consume receives a 60-second, one-use API lease for ciphertext bytes. |
+| **Verified delivery receipts** | A receipt is recorded only when a browser successfully decrypts a random proof authenticated inside a version-two envelope. The server stores only the proof hash, never the raw proof or plaintext. |
+| **Guardian Wipe** | A sender can create 2-of-3 through 5-of-5 trustee cards. A quorum may withdraw the server copy, but a single card—or every card—cannot decrypt the note or reveal its key. |
 | **Realtime collaboration drafts** | Temporary draft rooms use Supabase Realtime and are sealed or automatically purged after inactivity. |
 | **GitHub sign-in** | GitHub OAuth is handled by Supabase Auth; GitHub credentials stay in Supabase provider configuration, never in the browser bundle or API source. |
 | **Private account profile** | Authenticated users see provider identity, avatar, username, email, and an optional ≤160-character bio saved through owner-only Supabase RLS. No secret content or key material is stored there. |
@@ -133,9 +135,15 @@ Browser
                                             stores ciphertext only
 ```
 
-The encrypted envelope includes ciphertext, a public salt, IV, KDF configuration, and delivery metadata. The service-role key is used **only by server-side API functions** to write and clean up encrypted records, storage objects, and audit events. It must never be exposed through a `VITE_` variable or committed to source control.
+The encrypted envelope includes ciphertext, a public 32-byte salt, IV, fixed KDF configuration, and delivery metadata. New version-two envelopes also carry a random delivery proof inside authenticated ciphertext; only its SHA-256 verifier is stored. The service-role key is used **only by server-side API functions** to write and clean up encrypted records, private storage objects, and audit events. It must never be exposed through a `VITE_` variable or committed to source control.
+
+> **Guardian Wipe is revocation, not recovery.** The browser splits a separate random wipe capability, not the encryption key. Guardian shares are checksum-protected and paste-bound; the service accepts only the reconstructed capability verifier. Guardians cannot open, decrypt, or recover the note.
 
 > Locknote improves private delivery; it does not protect a compromised sender or recipient device, an exposed share URL, or availability failures of the hosting provider. Use a trusted channel to send links and compare the note fingerprint out of band when assurance matters.
+
+### Known limitations and roadmap
+
+Lock Note cannot erase plaintext a recipient has already copied, downloaded, photographed, or screen-captured. A verified delivery receipt proves that a browser with the encrypted proof successfully opened the envelope; it does not prove human comprehension. Guardian Wipe revokes future server delivery but cannot retract a recipient copy. Collaboration rooms remain a temporary pre-seal workspace, not end-to-end encrypted co-editing. Planned work is limited to a staging-only load report, an optional independent security review, and user-recorded accessibility/demo evidence—rather than adding server-side access to plaintext or keys.
 
 ### Collaboration privacy boundary
 
@@ -146,8 +154,8 @@ Realtime collaboration is a **pre-seal drafting feature**, not an end-to-end enc
 | Layer | Technology | Responsibility |
 | --- | --- | --- |
 | Client | React 19, Vite, TypeScript, Tailwind, Motion | Encrypt/decrypt content, render the editor, manage share links, and use Supabase Auth/Realtime. |
-| API | Express 5, Zod, Helmet, rate limits | Validates encrypted envelopes, manages lifecycle operations, serves receipts, performs owner-controlled deletion, and emits privacy-safe request timing/correlation metadata. |
-| Persistence | Supabase Postgres, Storage, Realtime, Auth | Stores encrypted records and encrypted file blobs, syncs temporary collaboration drafts, manages GitHub/email sessions, and protects opt-in profile/contact metadata with owner-only RLS. |
+| API | Express 5, Zod, Helmet, rate limits | Enforces fixed KDF policy, issues private one-use encrypted-file leases, validates proof acknowledgements and Guardian Wipe verifiers, manages lifecycle operations, and emits privacy-safe timing/correlation metadata. |
+| Persistence | Supabase Postgres, private Storage, Realtime, Auth | Stores ciphertext, proof/capability verifiers, private encrypted file blobs, temporary collaboration drafts, and owner-only profile/contact metadata. It never stores note keys, raw proofs, guardian shares, or plaintext. |
 | Hosting | Vercel | Builds the Vite SPA, serves Express API functions under `/api`, and calls the protected daily maintenance function. |
 
 ```text
@@ -178,7 +186,7 @@ The repository is ready for code review and a live evaluation. Before submitting
 | Rubric-by-rubric explanation | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Three-to-five-minute demo script | [docs/DEMO.md](docs/DEMO.md) |
 | Architecture and trust boundary | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SECURITY.md](docs/SECURITY.md) |
-| API and test evidence | [docs/API.md](docs/API.md) and [docs/TESTING.md](docs/TESTING.md) |
+| API, changelog, and test evidence | [docs/API.md](docs/API.md), [CHANGELOG.md](CHANGELOG.md), and [docs/TESTING.md](docs/TESTING.md) |
 | Safe environment templates | [.env.example](.env.example) and [.env.submission.template](.env.submission.template) |
 | Live deployment | <https://lock-note-sigma.vercel.app/> |
 
@@ -228,15 +236,15 @@ The `SUPABASE_SERVICE_ROLE_KEY` is server-only. Do **not** put it in a `VITE_` v
 
 ### 3. Bootstrap Supabase
 
-For a new project, open **Supabase Dashboard → SQL Editor**, paste the complete contents of [`docs/sql/001_init.sql`](docs/sql/001_init.sql), and run it once. For an existing Locknote project, run [`docs/sql/002_harden_drafts_rls.sql`](docs/sql/002_harden_drafts_rls.sql) afterwards. These migrations are idempotent and create or harden:
+For a new project, open **Supabase Dashboard → SQL Editor**, paste the complete contents of [`docs/sql/001_init.sql`](docs/sql/001_init.sql), and run it once. For an existing Locknote project, apply the migrations in numerical order through [`docs/sql/006_revoke_inherited_storage_privileges.sql`](docs/sql/006_revoke_inherited_storage_privileges.sql). These migrations are idempotent and create or harden:
 
 - `public.pastes` for encrypted note envelopes;
 - `public.drafts` for short-lived collaboration rooms, with database access restricted to the server-side API while Realtime Broadcast and Presence handle ephemeral collaboration;
 - `public.events` for privacy-safe lifecycle audit events;
-- the public `secrets` bucket for **encrypted** file blobs only; and
+- the private `secrets` bucket for encrypted file blobs, accessed only through a short-lived server-issued lease; and
 - recurring database cleanup for expired notes and old drafts.
 
-> The storage bucket is public by design because each object is ciphertext. It contains no decryption key or plaintext file content.
+> The `secrets` bucket is private by design. Even though objects are ciphertext, the recipient must first complete the envelope lifecycle to receive a 60-second one-use API lease; a Storage path is never included in public metadata or consume responses.
 
 ### 4. Start the application
 

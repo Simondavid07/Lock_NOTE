@@ -17,12 +17,12 @@ import {
   parseFragment,
   sealContent,
 } from '../crypto'
-import { utf8ToBytes } from '../encoding'
+import { base64urlToBytes, utf8ToBytes } from '../encoding'
 
 describe('deriveEncryptionKey + encrypt/decrypt (HKDF path)', () => {
   it('round-trips a payload with the same key and AAD', async () => {
     const secret = generateSecret()
-    const salt = utf8ToBytes(generateSalt())
+    const salt = base64urlToBytes(generateSalt())
     const key = await deriveEncryptionKey(secret, null, { salt, kdf: 'hkdf', iterations: 0 })
     const { ciphertext, iv } = await encrypt(key, utf8ToBytes('top secret'), aadFor('pasteId123'))
     expect(ciphertext).not.toEqual(utf8ToBytes('top secret'))
@@ -32,7 +32,7 @@ describe('deriveEncryptionKey + encrypt/decrypt (HKDF path)', () => {
 
   it('derives the same key deterministically', async () => {
     const secret = generateSecret()
-    const salt = utf8ToBytes(generateSalt())
+    const salt = base64urlToBytes(generateSalt())
     const k1 = await deriveEncryptionKey(secret, null, { salt, kdf: 'hkdf', iterations: 0 })
     const k2 = await deriveEncryptionKey(secret, null, { salt, kdf: 'hkdf', iterations: 0 })
     const { ciphertext, iv } = await encrypt(k1, utf8ToBytes('x'), aadFor('id'))
@@ -43,12 +43,12 @@ describe('deriveEncryptionKey + encrypt/decrypt (HKDF path)', () => {
 
   it('throws when the secret is missing on the hkdf path', async () => {
     await expect(
-      deriveEncryptionKey(null, null, { salt: utf8ToBytes('salt'), kdf: 'hkdf', iterations: 0 }),
+      deriveEncryptionKey(null, null, { salt: base64urlToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 }),
     ).rejects.toThrow('The paste key is missing from the URL.')
   })
 
   it('rejects a tampered ciphertext with IntegrityError', async () => {
-    const key = await deriveEncryptionKey(generateSecret(), null, { salt: utf8ToBytes('salt'), kdf: 'hkdf', iterations: 0 })
+    const key = await deriveEncryptionKey(generateSecret(), null, { salt: base64urlToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
     const { ciphertext, iv } = await encrypt(key, utf8ToBytes('secret'), aadFor('id'))
     const tampered = ciphertext.slice()
     tampered[tampered.length - 1]! ^= 0xff
@@ -56,13 +56,13 @@ describe('deriveEncryptionKey + encrypt/decrypt (HKDF path)', () => {
   })
 
   it('rejects decryption under a different AAD (paste id swap)', async () => {
-    const key = await deriveEncryptionKey(generateSecret(), null, { salt: utf8ToBytes('salt'), kdf: 'hkdf', iterations: 0 })
+    const key = await deriveEncryptionKey(generateSecret(), null, { salt: base64urlToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
     const { ciphertext, iv } = await encrypt(key, utf8ToBytes('secret'), aadFor('pasteA'))
     await expect(decrypt(key, ciphertext, iv, aadFor('pasteB'))).rejects.toBeInstanceOf(IntegrityError)
   })
 
   it('rejects decryption with the wrong IV', async () => {
-    const key = await deriveEncryptionKey(generateSecret(), null, { salt: utf8ToBytes('salt'), kdf: 'hkdf', iterations: 0 })
+    const key = await deriveEncryptionKey(generateSecret(), null, { salt: base64urlToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
     const { ciphertext } = await encrypt(key, utf8ToBytes('secret'), aadFor('id'))
     const wrongIv = new Uint8Array(12)
     await expect(decrypt(key, ciphertext, wrongIv, aadFor('id'))).rejects.toBeInstanceOf(IntegrityError)
@@ -79,7 +79,7 @@ describe('deriveEncryptionKey + encrypt/decrypt (HKDF path)', () => {
 
 describe('passphrase path (PBKDF2)', () => {
   it('round-trips with the correct passphrase', async () => {
-    const salt = utf8ToBytes(generateSalt())
+    const salt = base64urlToBytes(generateSalt())
     const key = await deriveEncryptionKey(null, 'correct horse battery staple', {
       salt,
       kdf: 'pbkdf2',
@@ -91,7 +91,7 @@ describe('passphrase path (PBKDF2)', () => {
   })
 
   it('fails with IntegrityError on a wrong passphrase', async () => {
-    const salt = utf8ToBytes(generateSalt())
+    const salt = base64urlToBytes(generateSalt())
     const good = await deriveEncryptionKey(null, 'correct passphrase', { salt, kdf: 'pbkdf2', iterations: 600_000 })
     const bad = await deriveEncryptionKey(null, 'wrong passphrase', { salt, kdf: 'pbkdf2', iterations: 600_000 })
     const { ciphertext, iv } = await encrypt(good, utf8ToBytes('secret'), aadFor('id'))
@@ -100,7 +100,7 @@ describe('passphrase path (PBKDF2)', () => {
 
   it('throws when no passphrase is provided', async () => {
     await expect(
-      deriveEncryptionKey(null, null, { salt: utf8ToBytes('salt'), kdf: 'pbkdf2', iterations: 600_000 }),
+      deriveEncryptionKey(null, null, { salt: base64urlToBytes(generateSalt()), kdf: 'pbkdf2', iterations: 600_000 }),
     ).rejects.toThrow('A passphrase is required for this paste.')
   })
 })
@@ -108,7 +108,7 @@ describe('passphrase path (PBKDF2)', () => {
 describe('sealContent / openContent', () => {
   it('round-trips a text envelope', async () => {
     const id = generatePasteId()
-    const key = await deriveEncryptionKey(generateSecret(), null, { salt: utf8ToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
+    const key = await deriveEncryptionKey(generateSecret(), null, { salt: base64urlToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
     const sealed = await sealContent(key, id, { v: 1, title: 'My secret', content: 'hello', language: 'markdown' })
     const opened = await openContent(key, id, sealed.ciphertextB64, sealed.ivB64)
     expect(opened).toEqual({ v: 1, title: 'My secret', content: 'hello', language: 'markdown' })
@@ -116,7 +116,7 @@ describe('sealContent / openContent', () => {
 
   it('round-trips a credentials envelope', async () => {
     const id = generatePasteId()
-    const key = await deriveEncryptionKey(generateSecret(), null, { salt: utf8ToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
+    const key = await deriveEncryptionKey(generateSecret(), null, { salt: base64urlToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
     const envelope = { v: 1, title: 'prod db', content: 'postgres://u:p@host:5432/db' } as const
     const sealed = await sealContent(key, id, envelope)
     expect(await openContent(key, id, sealed.ciphertextB64, sealed.ivB64)).toEqual(envelope)
@@ -125,14 +125,14 @@ describe('sealContent / openContent', () => {
   it('rejects opening under a different paste id (AAD binding)', async () => {
     const idA = generatePasteId()
     const idB = generatePasteId()
-    const key = await deriveEncryptionKey(generateSecret(), null, { salt: utf8ToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
+    const key = await deriveEncryptionKey(generateSecret(), null, { salt: base64urlToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
     const sealed = await sealContent(key, idA, { v: 1, content: 'secret' })
     await expect(openContent(key, idB, sealed.ciphertextB64, sealed.ivB64)).rejects.toBeInstanceOf(IntegrityError)
   })
 
   it('rejects tampered ciphertext', async () => {
     const id = generatePasteId()
-    const key = await deriveEncryptionKey(generateSecret(), null, { salt: utf8ToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
+    const key = await deriveEncryptionKey(generateSecret(), null, { salt: base64urlToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
     const sealed = await sealContent(key, id, { v: 1, content: 'secret' })
     const bytes = new TextEncoder().encode(sealed.ciphertextB64)
     bytes[bytes.length - 1] = bytes[bytes.length - 1] === 65 ? 66 : 65
@@ -140,9 +140,17 @@ describe('sealContent / openContent', () => {
     await expect(openContent(key, id, tampered, sealed.ivB64)).rejects.toBeInstanceOf(IntegrityError)
   })
 
-  it('rejects unsupported payload versions', async () => {
+  it('round-trips a version-two envelope with an authenticated receipt proof', async () => {
     const id = generatePasteId()
-    const key = await deriveEncryptionKey(generateSecret(), null, { salt: utf8ToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
+    const key = await deriveEncryptionKey(generateSecret(), null, { salt: base64urlToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
+    const envelope = { v: 2, content: 'secret', receiptProof: 'CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws' } as const
+    const sealed = await sealContent(key, id, envelope)
+    expect(await openContent(key, id, sealed.ciphertextB64, sealed.ivB64)).toEqual(envelope)
+  })
+
+  it('rejects a version-two envelope without a valid receipt proof', async () => {
+    const id = generatePasteId()
+    const key = await deriveEncryptionKey(generateSecret(), null, { salt: base64urlToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
     const sealed = await sealContent(key, id, { v: 2 } as never)
     await expect(openContent(key, id, sealed.ciphertextB64, sealed.ivB64)).rejects.toBeInstanceOf(IntegrityError)
   })

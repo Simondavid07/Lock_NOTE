@@ -28,6 +28,9 @@ const LoginPage = lazy(() =>
 const ProfilePage = lazy(() =>
   import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })),
 )
+const GuardianWipePage = lazy(() =>
+  import('./pages/GuardianWipePage').then((m) => ({ default: m.GuardianWipePage })),
+)
 
 import { VaultBackdrop } from './components/VaultBackdrop'
 import { CustomCursor } from './components/CustomCursor'
@@ -105,6 +108,7 @@ export default function App() {
                 <Route path="/auth/callback" element={<div className="flex min-h-[40vh] items-center justify-center font-mono text-xs tracking-[0.12em] text-zinc-500">COMPLETING SECURE SIGN-IN</div>} />
                 <Route path="/paste/:id" element={<ViewPage />} />
                 <Route path="/collab/:roomId" element={<CollabPage />} />
+                <Route path="/guardian-wipe" element={<GuardianWipePage />} />
                 <Route path="/how-it-works" element={<AboutPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>

@@ -113,6 +113,14 @@ After `001_init.sql` and `002_harden_drafts_rls.sql`, apply [`docs/sql/003_profi
 | `profiles` | Provider-derived display metadata and an optional ≤160-character bio | Plaintext notes, ciphertext, share URLs, fragments, passphrases, decryption material, and owner capabilities. |
 | `vault_contacts` | A private, owner-scoped GitHub username shortcut | Recipient authorization, collaboration permission, notes, keys, or secret links. |
 
+## Verified delivery and private file-storage migration
+
+Apply migrations in order: `001_init.sql`, `002_harden_drafts_rls.sql`, `003_profiles_and_contacts.sql`, `004_revoke_rls_trigger_execute.sql`, [`005_verified_delivery_and_guardian_wipe.sql`](sql/005_verified_delivery_and_guardian_wipe.sql), then [`006_revoke_inherited_storage_privileges.sql`](sql/006_revoke_inherited_storage_privileges.sql) for an existing project. Migration `005` adds only receipt/guardian/file-lease state and hash-only verifiers; it does not backfill plaintext or decryption material. It also changes the `secrets` bucket from public to private.
+
+After migration `005`, verify that `storage.buckets.public` is `false` for `secrets`, Storage RLS is enabled, there is no browser `storage.objects` policy, and the service-role-backed API can create and redeem a synthetic one-use file lease. Supabase manages baseline Storage table grants, so table-grant listings alone are not proof of browser authorization. A fresh project gets the private setting directly from `001_init.sql`; an existing project requires `005` and the recorded `006` follow-up.
+
+> Do not add a broad browser Storage policy merely to make uploads work. Lock Note uploads and streams encrypted file bytes through the server-only service role after the encrypted envelope lifecycle authorizes the operation.
+
 ## Release-quality checks
 
 Before a production release, run the standard type, unit/integration, build, and production-dependency checks in [TESTING.md](TESTING.md), then also run `npm run test:bundle` and `npm run test:accessibility`. Confirm the GitHub `Quality gate` workflow is green after pushing. The daily/manual `Production smoke` workflow then verifies the public lifecycle and required static headers against the production alias without needing repository secrets.
@@ -123,4 +131,4 @@ The enforced Content Security Policy in `vercel.json` is part of the release bou
 
 The production project requires the current password before an email-password change, enforces a twelve-character minimum, and requires lowercase, uppercase, numeric, and symbol characters for new or changed email passwords. Supabase’s HaveIBeenPwned leaked-password check is not available on the project’s current Free plan, so it remains an externally enforced platform limitation rather than a repository defect. GitHub OAuth remains the primary authenticated route.
 
-Apply [`docs/sql/004_revoke_rls_trigger_execute.sql`](sql/004_revoke_rls_trigger_execute.sql) after the earlier database migrations. It removes `PUBLIC`, `anon`, and `authenticated` execute rights from the `SECURITY DEFINER` event-trigger helper used to auto-enable RLS. The database event-trigger mechanism continues to run the helper; browser/API callers cannot invoke it through the exposed schema.
+Apply [`docs/sql/004_revoke_rls_trigger_execute.sql`](sql/004_revoke_rls_trigger_execute.sql) after the earlier database migrations, before `005`. It removes `PUBLIC`, `anon`, and `authenticated` execute rights from the `SECURITY DEFINER` event-trigger helper used to auto-enable RLS. The database event-trigger mechanism continues to run the helper; browser/API callers cannot invoke it through the exposed schema.

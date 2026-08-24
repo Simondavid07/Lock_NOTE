@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { AxeBuilder } from '@axe-core/playwright'
 
-for (const route of ['/', '/login', '/how-it-works']) {
+for (const route of ['/', '/login', '/how-it-works', '/guardian-wipe']) {
   test(`public route ${route} has no serious accessibility violations`, async ({ page }) => {
     await page.goto(route)
     await expect(page.locator('main')).toBeVisible()

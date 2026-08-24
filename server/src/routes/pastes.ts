@@ -4,14 +4,12 @@ import type { FileBlobStore } from '../blob-store.js'
 import { toMetadata } from '../helpers.js'
 import type { AuditSink, PasteRecord } from '../types.js'
 import type { PasteStore } from '../store.js'
-import { consumeSchema, createPasteSchema, ownerSchema } from '../schemas.js'
+import { acknowledgeSchema, consumeSchema, createPasteSchema, fileLeaseSchema, guardianWipeSchema, ownerSchema } from '../schemas.js'
 import { randomId, ttlToExpiry } from '../util.js'
 
-const bytesFromBase64 = (b64: string): Uint8Array => {
-  return new Uint8Array(Buffer.from(b64, 'base64'))
-}
+const bytesFromBase64 = (value: string): Uint8Array => new Uint8Array(Buffer.from(value, 'base64'))
 
-function publicConsumeBody(record: PasteRecord, preview: boolean) {
+function publicConsumeBody(record: PasteRecord, preview: boolean, fileLease: { token: string; expiresAt: number } | null) {
   return {
     id: record.id,
     status: 'alive' as const,
@@ -24,20 +22,15 @@ function publicConsumeBody(record: PasteRecord, preview: boolean) {
     salt: record.salt,
     iv: record.iv,
     ciphertext: record.ciphertext,
-    storagePath: record.storagePath,
     fileMeta: record.fileMeta,
+    fileLease: fileLease ? { token: fileLease.token, expiresAt: fileLease.expiresAt } : null,
     expiresAt: record.expiresAt,
     burnAfterRead: record.burnAfterRead,
   }
 }
 
-export function pastesRouter(deps: {
-  store: PasteStore
-  files: FileBlobStore
-  audit: AuditSink
-}): Router {
+export function pastesRouter(deps: { store: PasteStore; files: FileBlobStore; audit: AuditSink }): Router {
   const router = Router()
-
   const createLimiter = rateLimit({
     windowMs: 60_000,
     limit: 20,
@@ -65,16 +58,12 @@ export function pastesRouter(deps: {
       const id = body.id ?? randomId()
       const createdAt = deps.store.now()
       const expiresAt = ttlToExpiry(body.ttlSeconds, createdAt)
-
       if (await deps.store.get(id)) {
         res.status(409).json({ error: 'id_collision', message: 'That paste id is already taken — try again.' })
         return
       }
 
-      if (body.file) {
-        storagePath = await deps.files.upload(id, bytesFromBase64(body.file.storagePayload))
-      }
-
+      if (body.file) storagePath = await deps.files.upload(id, bytesFromBase64(body.file.storagePayload))
       const record = await deps.store.create({
         id,
         ciphertext: body.ciphertext,
@@ -91,6 +80,9 @@ export function pastesRouter(deps: {
         fileMeta: body.file ? { size: body.file.size, iv: body.file.fileIv } : null,
         expiresAt,
         ownerToken: body.ownerToken,
+        receiptProofHash: body.receiptProofHash,
+        guardianVerifier: body.guardian?.verifier ?? null,
+        guardianPolicy: body.guardian ? { threshold: body.guardian.threshold, total: body.guardian.total } : null,
       })
       void deps.audit.record(id, 'paste:created')
       res.status(201).json({
@@ -101,23 +93,22 @@ export function pastesRouter(deps: {
         expiresAt: record.expiresAt,
         ownerToken: body.ownerToken,
       })
-    } catch (err) {
+    } catch (error) {
       if (storagePath) await deps.files.delete(storagePath).catch(() => undefined)
-      next(err)
+      next(error)
     }
   })
 
   router.get('/:id', async (req, res, next) => {
     try {
-      const id = String(req.params.id ?? '')
-      const record = await deps.store.get(id)
+      const record = await deps.store.get(String(req.params.id ?? ''))
       if (!record) {
         res.status(404).json({ error: 'not_found', status: 'gone' })
         return
       }
       res.json(toMetadata(record, deps.store.now()))
-    } catch (err) {
-      next(err)
+    } catch (error) {
+      next(error)
     }
   })
 
@@ -130,74 +121,127 @@ export function pastesRouter(deps: {
         res.status(410).json({ error: 'not_available', status: outcome.status })
         return
       }
-      void deps.audit.record(
-        id,
-        outcome.preview ? 'paste:previewed' : outcome.record.burned ? 'paste:burned' : 'paste:consumed',
-      )
-      res.json(publicConsumeBody(outcome.record, outcome.preview))
-    } catch (err) {
-      next(err)
+      // Burn-after-read files receive their lease atomically with the burn
+      // transition. Non-burning reads and owner previews can safely request a
+      // fresh lease afterward because a transient issuance failure is retryable.
+      const fileLease = outcome.fileLease ?? (outcome.record.storagePath ? await deps.store.issueFileLease(id) : null)
+      if (outcome.record.storagePath && !fileLease) {
+        res.status(503).json({ error: 'file_delivery_unavailable' })
+        return
+      }
+      void deps.audit.record(id, outcome.preview ? 'paste:previewed' : outcome.record.burned ? 'paste:burned' : 'paste:consumed')
+      res.json(publicConsumeBody(outcome.record, outcome.preview, fileLease))
+    } catch (error) {
+      next(error)
     }
   })
 
-  router.post('/:id/viewed', consumeLimiter, async (req, res, next) => {
+  /** Redeem a short-lived encrypted-file lease. The storage object itself is never publicly addressable. */
+  router.post('/:id/file', consumeLimiter, async (req, res, next) => {
     try {
       const id = String(req.params.id ?? '')
-      const result = await deps.store.viewed(id)
-      if (!result) {
-        res.status(404).json({ error: 'not_found' })
+      const { token } = fileLeaseSchema.parse(req.body ?? {})
+      const storagePath = await deps.store.redeemFileLease(id, token)
+      if (!storagePath) {
+        res.status(404).json({ error: 'not_found_or_invalid_lease' })
         return
       }
-      res.json(result)
-    } catch (err) {
-      next(err)
+      const bytes = await deps.files.read(storagePath)
+      if (!bytes) {
+        res.status(410).json({ error: 'file_unavailable' })
+        return
+      }
+      res.setHeader('Cache-Control', 'no-store, max-age=0')
+      res.type('application/octet-stream').send(Buffer.from(bytes))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  /**
+   * The raw proof is authenticated inside the ciphertext envelope. This route
+   * records a one-time verified-open acknowledgement only after local decrypt.
+   */
+  router.post('/:id/acknowledge', consumeLimiter, async (req, res, next) => {
+    try {
+      const id = String(req.params.id ?? '')
+      const { proof } = acknowledgeSchema.parse(req.body ?? {})
+      const result = await deps.store.acknowledge(id, proof)
+      if (!result) {
+        res.status(404).json({ error: 'not_found_or_invalid_proof' })
+        return
+      }
+      void deps.audit.record(id, 'paste:acknowledged')
+      res.status(201).json({ acknowledgedAt: result.acknowledgedAt })
+    } catch (error) {
+      next(error)
     }
   })
 
   router.post('/:id/receipt', consumeLimiter, async (req, res, next) => {
     try {
-      const id = String(req.params.id ?? '')
-      const { ownerToken } = ownerSchema.parse(req.body ?? {})
-      const receipt = await deps.store.receipt(id, ownerToken)
+      const receipt = await deps.store.receipt(String(req.params.id ?? ''), ownerSchema.parse(req.body ?? {}).ownerToken)
       if (!receipt) {
         res.status(404).json({ error: 'not_found_or_forbidden' })
         return
       }
       res.json(receipt)
-    } catch (err) {
-      next(err)
+    } catch (error) {
+      next(error)
     }
   })
+
+  async function removeWithOwner(id: string, ownerToken: string): Promise<{ removed: boolean; storagePath: string | null }> {
+    const record = await deps.store.get(id)
+    if (!record) return { removed: false, storagePath: null }
+    const removed = await deps.store.destroy(id, ownerToken)
+    return { removed, storagePath: removed ? record.storagePath : null }
+  }
 
   router.delete('/:id', consumeLimiter, async (req, res, next) => {
     try {
       const id = String(req.params.id ?? '')
-      const { ownerToken } = ownerSchema.parse(req.body ?? {})
+      const { removed, storagePath } = await removeWithOwner(id, ownerSchema.parse(req.body ?? {}).ownerToken)
+      if (!removed) {
+        res.status(403).json({ error: 'forbidden' })
+        return
+      }
+      if (storagePath) await deps.files.delete(storagePath).catch(() => undefined)
+      void deps.audit.record(id, 'paste:destroyed')
+      res.status(204).end()
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.post('/:id/guardian-wipe', consumeLimiter, async (req, res, next) => {
+    try {
+      const id = String(req.params.id ?? '')
       const record = await deps.store.get(id)
       if (!record) {
         res.status(404).json({ error: 'not_found' })
         return
       }
-      const destroyed = await deps.store.destroy(id, ownerToken)
-      if (!destroyed) {
+      const { capability } = guardianWipeSchema.parse(req.body ?? {})
+      const removed = await deps.store.guardianDestroy(id, capability)
+      if (!removed) {
         res.status(403).json({ error: 'forbidden' })
         return
       }
       if (record.storagePath) await deps.files.delete(record.storagePath).catch(() => undefined)
-      void deps.audit.record(id, 'paste:destroyed')
+      void deps.audit.record(id, 'paste:guardian_destroyed')
       res.status(204).end()
-    } catch (err) {
-      next(err)
+    } catch (error) {
+      next(error)
     }
   })
 
   router.get('/:id/status', async (req, res, next) => {
     try {
       const id = String(req.params.id ?? '')
-      const status = await deps.store.status(id)
-      res.json({ id, status })
-    } catch (err) {
-      next(err)
+      res.json({ id, status: await deps.store.status(id) })
+    } catch (error) {
+      next(error)
     }
   })
 

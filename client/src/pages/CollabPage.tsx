@@ -16,6 +16,8 @@ import {
   generatePasteId,
   generateSalt,
   generateSecret,
+  generateReceiptProof,
+  sha256Base64url,
   sealContent,
   fingerprint,
   buildShareUrl,
@@ -167,7 +169,9 @@ export function CollabPage() {
         kdf: 'hkdf',
         iterations: 0,
       })
-      const { ciphertextB64, ivB64 } = await sealContent(key, id, { v: 1, content })
+      const receiptProof = generateReceiptProof()
+      const receiptProofHash = await sha256Base64url(receiptProof)
+      const { ciphertextB64, ivB64 } = await sealContent(key, id, { v: 2, content, receiptProof })
       setSealPhase('uploading')
       const ownerToken = generateOwnerToken()
       const res = await api.createPaste({
@@ -184,6 +188,7 @@ export function CollabPage() {
         deadSwitchDays: 7,
         ttlSeconds: 86400,
         ownerToken,
+        receiptProofHash,
       })
       await api.sealDraft(roomId, ownerToken)
       sessionStorage.setItem(`locknote:owner:${res.id}`, ownerToken)

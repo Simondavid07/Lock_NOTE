@@ -9,7 +9,7 @@ The project is designed as a complete deployed system rather than a prototype. I
 | Evaluation area | Evidence in this repository |
 | --- | --- |
 | Problem Understanding & Core Functionality | This document, [README](../README.md), [API reference](API.md), and the live lifecycle smoke test. |
-| Innovation & Meaningful Differentiation | [Comparison guide](COMPARISON.md), seal fingerprints, encrypted files, dead switches, and encrypted-note lifecycle controls. |
+| Innovation & Meaningful Differentiation | [Comparison guide](COMPARISON.md), proof-based delivery receipts, private one-use encrypted-file leases, Guardian Wipe threshold revocation, seal fingerprints, dead switches, and encrypted-note lifecycle controls. |
 | Technical Implementation & Architecture | [Architecture guide](ARCHITECTURE.md), [Security model](SECURITY.md), source structure, tests, and Supabase migrations. |
 | User Experience & Accessibility | README screenshots, session-aware protected routes, keyboard command palette, skip link, theme support, clear error states, semantic controls, responsive workflows, and automated axe checks. |
 | Performance & Reliability / Demo Quality | [Testing guide](TESTING.md), live smoke test, health/version endpoint, request IDs, bundle budget, static-header checks, rate limiting, protected maintenance, CI, and Vercel deployment. |
@@ -32,8 +32,9 @@ Lock Note addresses this by separating **encrypted storage** from **decryption c
 | Read a note | Fetches ciphertext, derives the key in-browser, and decrypts locally. | Client crypto tests and read workflow. |
 | Burn after read | Allows exactly one successful non-owner read, then permanently returns a burned state. | Server lifecycle tests and live smoke test. |
 | Expire or withdraw | Supports deadline expiry, inactivity-based deletion, and sender-controlled remote wipe. | Lifecycle endpoints, maintenance function, and live smoke test. |
-| Recover sender control | Provides owner preview, delivery receipts, and withdrawal through an owner capability token. | API reference and tests. |
-| Work with files and drafts | Encrypts files before storage and supports short-lived collaboration drafts before sealing. | Supabase Storage, Realtime, migrations, and smoke test. |
+| Recover sender control | Provides owner preview, a proof-based envelope-open acknowledgement, and owner withdrawal. | API reference and proof replay lifecycle tests. |
+| Work with files and drafts | Encrypts files before private storage, delivers ciphertext through a short-lived one-use lease, and supports short-lived collaboration drafts before sealing. | API, migration `005`, lifecycle tests, and live smoke test. |
+| Emergency revocation | Generates 2-of-3 through 5-of-5 Guardian Wipe cards for server-copy withdrawal without sharing a decryption key. | Browser Guardian tests, API route, and documented demo. |
 
 > **Core design choice:** Lock Note is not merely a database-backed pastebin. It treats the API as an encrypted-envelope lifecycle service and keeps key material outside the backend boundary.
 
@@ -47,7 +48,9 @@ Lock Note builds on the familiar one-time-secret concept but adds sender control
 | Context-bound encryption | AES-GCM additional authenticated data binds the payload to the paste identifier and protocol version, detecting envelope substitution. |
 | Passphrase-protected shares | An optional second secret gives senders an additional distribution channel beyond the URL. |
 | Dead-switch lifecycle | A note can self-delete after a configured period of visitor inactivity, not only a fixed deadline. |
-| Encrypted file envelopes | Files are encrypted in the browser and stored separately as ciphertext blobs. |
+| Private encrypted-file delivery | Files are encrypted in the browser, stored in a non-public bucket, and streamed only after a successful consume through a 60-second one-use API lease. |
+| Proof-based delivery receipts | A random proof inside authenticated v2 ciphertext is acknowledged once after local decrypt; the server stores only its hash and cannot create the acknowledgement from an ID alone. |
+| Guardian Wipe revocation | Browser-only 2-of-3 through 5-of-5 threshold cards reconstruct a separate server-revocation capability. Trustees can jointly delete future delivery but cannot decrypt. |
 | Seal fingerprints | Four-word mnemonic and color-glyph fingerprints provide a human-verifiable out-of-band authenticity signal. |
 | QR-assisted delivery | The sealed link can be rendered as a QR code for deliberate cross-device transfer without changing the encrypted-envelope model. |
 | GitHub-authenticated identity | Supabase Auth returns the user to the app with a provider identity, avatar, username, and email visible in a personalized profile. |
@@ -63,9 +66,9 @@ The comparison with a traditional pastebin is documented in [COMPARISON.md](COMP
 | Layer | Implementation | Responsibility |
 | --- | --- | --- |
 | Client | React 19, TypeScript, Vite, Tailwind, Motion | Encryption/decryption, editor UX, authenticated library, share links, and realtime collaboration. |
-| Cryptography | Web Crypto API | AES-256-GCM encryption, PBKDF2/HKDF key derivation, IV and salt handling, and integrity checks. |
-| API | Express 5, Zod, Helmet, rate limits | Schema validation, lifecycle state transitions, owner capability checks, receipts, controlled deletion, request IDs, safe timing, and structured redacted operational logs. |
-| Persistence | Supabase Postgres, Storage, Auth, Realtime | Ciphertext records, encrypted file objects, provider-backed GitHub sign-in, ephemeral collaboration signals, and owner-only profile/contact metadata. |
+| Cryptography | Web Crypto API | AES-256-GCM encryption, authenticated v2 proof envelope, browser Shamir-style Guardian Wipe splitting, fixed PBKDF2/HKDF policy, and integrity checks. |
+| API | Express 5, Zod, Helmet, rate limits | Strict crypto-schema validation, lifecycle state transitions, owner/guardian verifier checks, one-use private file leases, proof acknowledgements, controlled deletion, request IDs, safe timing, and structured redacted operational logs. |
+| Persistence | Supabase Postgres, private Storage, Auth, Realtime | Ciphertext records, hash-only proof/guardian/lease state, private encrypted file objects, provider-backed GitHub sign-in, ephemeral collaboration signals, and owner-only profile/contact metadata. |
 | Hosting | Vercel serverless functions and static delivery | Vite build hosting, nested API routing, enforced static CSP/security headers, production environment isolation, and scheduled cleanup. |
 
 The architecture deliberately uses a **store interface** so local development can use a memory implementation, while production initializes only with a valid Supabase configuration. Production does not silently substitute ephemeral memory for persistent storage.
@@ -99,10 +102,10 @@ Lock Note is designed for demonstrable reliability. The project includes automat
 | --- | --- |
 | Type safety | `npm run typecheck` validates client, server, and Vercel function TypeScript entry points. |
 | Build validation | `npm run build` produces the Vite client and server artifacts. |
-| Unit and integration coverage | `npm run test` covers crypto integrity, schema validation, rate limiting, lifecycle transitions, and API behavior. |
+| Unit and integration coverage | `npm run test` currently passes **88 tests**: proof-envelope and fixed-KDF behavior, Guardian share quorum/tamper cases, strict schemas, safe metadata, one-use/expiring private file leases, burn lifecycle, receipt replay, and API behavior. |
 | Accessibility and keyboard workspace | `npm run test:accessibility` serves the built client, fails on serious/critical axe findings, and verifies command-palette/skip-link keyboard behavior. |
 | Bundle budget | `npm run test:bundle` fails when the largest emitted JavaScript chunk exceeds the documented 850 KiB threshold. |
-| Live lifecycle test | `API_URL=https://lock-note-sigma.vercel.app npm run test:live` exercises production health, create, metadata, preview, burn, receipts, drafts, and remote wipe. |
+| Live lifecycle test | `API_URL=https://lock-note-sigma.vercel.app npm run test:live` exercises production health, proof-enabled create, safe metadata, preview, burn, one verified receipt acknowledgement, private one-use file delivery, Guardian Wipe, drafts, and owner remote wipe. |
 | Honest readiness and telemetry | `GET /api/health` reports the active store/build version; API responses provide request IDs and safe timing without recording sensitive request data. |
 | Static delivery hardening | The Vercel static policy enforces CSP, Permissions Policy, `nosniff`, referrer, opener, and resource policies; a live header script verifies their presence. |
 | CI and scheduled verification | GitHub Actions enforces pull-request/main quality gates and performs a daily/manual public lifecycle and header smoke check. |
@@ -117,10 +120,11 @@ Lock Note is designed for demonstrable reliability. The project includes automat
 4. Repeat with burn-after-read enabled, then show that the second read is unavailable.
 5. Show owner preview, receipt, and remote withdrawal controls.
 6. Show the seal fingerprint and QR code; explain that both represent the same sensitive full link and should be shared only with the intended recipient.
-7. Demonstrate a passphrase-protected note or encrypted file attachment.
-8. Sign in with GitHub and show the protected profile, optional account bio, private contact shortcuts, and browser-local capability vault; explain the RLS and zero-knowledge boundary.
-9. Explain that collaboration occurs before sealing and is intentionally documented as a different trust boundary.
-10. Run or show the passing live smoke command.
+7. Demonstrate a private encrypted file: explain the one-use lease and that no Storage path reaches the recipient.
+8. Demonstrate Guardian Wipe with a 2-of-3 quorum and state explicitly that guardians revoke but cannot decrypt.
+9. Sign in with GitHub and show the protected profile, optional account bio, private contact shortcuts, and browser-local capability vault; explain the RLS and zero-knowledge boundary.
+10. Explain that collaboration occurs before sealing and is intentionally documented as a different trust boundary.
+11. Show a keyboard skip-link/command-palette pass, then run or show the passing live smoke command.
 
 A concise evaluator script is included in [DEMO.md](DEMO.md).
 
@@ -140,6 +144,9 @@ The repository is structured so a reviewer can understand the project before run
 | [FEATURES.md](FEATURES.md) | Visual product tour of GitHub identity, owner-only profile/contact metadata, browser-local capability vault management, QR delivery, fingerprints, and sender controls. |
 | [`sql/003_profiles_and_contacts.sql`](sql/003_profiles_and_contacts.sql) | Idempotent profile/contact schema with strict owner-only row-level security and an explicit no-secrets data contract. |
 | [`sql/004_revoke_rls_trigger_execute.sql`](sql/004_revoke_rls_trigger_execute.sql) | Least-privilege remediation that removes exposed caller execution of the SECURITY DEFINER RLS event-trigger helper. |
+| [`sql/005_verified_delivery_and_guardian_wipe.sql`](sql/005_verified_delivery_and_guardian_wipe.sql) | Hash-only delivery/guardian/file-lease persistence and private encrypted-file Storage migration. |
+| [`sql/006_revoke_inherited_storage_privileges.sql`](sql/006_revoke_inherited_storage_privileges.sql) | Existing-project Storage privilege follow-up with authorization verification through private bucket plus Storage RLS/no browser policy. |
+| [CHANGELOG.md](../CHANGELOG.md) | Dated release rationale describing security and product decisions. |
 | [COMPARISON.md](COMPARISON.md) | Meaningful differentiation from classic pastebin workflows. |
 
 > Reviewers should use `.env.example` or `.env.submission.template` as a copyable configuration map. Real service-role keys and OAuth secrets are intentionally excluded from Git history and submission archives.

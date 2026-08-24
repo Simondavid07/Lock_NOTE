@@ -220,10 +220,6 @@ export function isSupabaseRealtimeAvailable(): boolean {
   return supabase !== null
 }
 
-export function storageObjectUrl(storagePath: string): string {
-  if (!url || configurationError) throw new Error(configurationError ?? 'Supabase Storage is not configured.')
-  return `${url}/storage/v1/object/public/secrets/${storagePath}`
-}
 
 function safeLocalPath(value: string | null | undefined): string {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard'

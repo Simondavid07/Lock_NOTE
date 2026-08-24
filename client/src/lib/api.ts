@@ -10,7 +10,6 @@ export interface PasteMetadata {
   burnAfterRead: boolean
   deadSwitchDays: number | null
   hasFile: boolean
-  storagePath: string | null
   createdAt: number
   expiresAt: number | null
   requiresPassphrase: boolean
@@ -18,6 +17,7 @@ export interface PasteMetadata {
   iterations: number
   salt: string
   iv: string
+  guardianPolicy: { threshold: number; total: number } | null
 }
 
 export interface ConsumeResult {
@@ -32,8 +32,8 @@ export interface ConsumeResult {
   salt: string
   iv: string
   ciphertext: string
-  storagePath: string | null
   fileMeta: { size: number; iv: string } | null
+  fileLease: { token: string; expiresAt: number } | null
   expiresAt: number | null
   burnAfterRead: boolean
 }
@@ -44,6 +44,7 @@ export interface Receipt {
   viewCount: number
   firstViewedAt: number | null
   lastViewedAt: number | null
+  receiptAcknowledgedAt: number | null
   status: PasteStatus
 }
 
@@ -62,6 +63,10 @@ export interface CreatePasteRequest {
   deadSwitchDays: number | null
   ttlSeconds: number
   ownerToken: string
+  /** SHA-256 verifier; the raw proof is encrypted inside the envelope. */
+  receiptProofHash: string
+  /** Optional K-of-N Guardian Wipe verifier; it is never a content key. */
+  guardian?: { threshold: number; total: number; verifier: string }
   file?: { storagePayload: string; size: number; fileIv: string }
 }
 
@@ -110,6 +115,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
+async function downloadEncryptedFile(id: string, token: string): Promise<Uint8Array> {
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}/api/pastes/${encodeURIComponent(id)}/file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+  } catch {
+    throw new ApiError('Could not reach the Locknote service.', 0)
+  }
+  if (!res.ok) throw new ApiError('This encrypted file is unavailable or its secure delivery lease expired.', res.status)
+  return new Uint8Array(await res.arrayBuffer())
+}
+
 function describeError(status: number, key?: string): string {
   if (key === 'not_found' || key === 'not_available') return 'This paste no longer exists.'
   if (key === 'forbidden') return 'You are not authorized to do that.'
@@ -122,11 +142,15 @@ export const api = {
   getMetadata: (id: string) => request<PasteMetadata>(`/api/pastes/${encodeURIComponent(id)}`),
   consume: (id: string, ownerToken?: string) =>
     request<ConsumeResult>(`/api/pastes/${encodeURIComponent(id)}/consume`, { method: 'POST', body: JSON.stringify(ownerToken ? { ownerToken } : {}) }),
-  viewed: (id: string) => request<{ viewCount: number }>(`/api/pastes/${encodeURIComponent(id)}/viewed`, { method: 'POST', body: '{}' }),
+  acknowledge: (id: string, proof: string) =>
+    request<{ acknowledgedAt: number }>(`/api/pastes/${encodeURIComponent(id)}/acknowledge`, { method: 'POST', body: JSON.stringify({ proof }) }),
   receipt: (id: string, ownerToken: string) =>
     request<Receipt>(`/api/pastes/${encodeURIComponent(id)}/receipt`, { method: 'POST', body: JSON.stringify({ ownerToken }) }),
   destroy: (id: string, ownerToken: string) =>
     request<undefined>(`/api/pastes/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ ownerToken }) }),
+  guardianWipe: (id: string, capability: string) =>
+    request<undefined>(`/api/pastes/${encodeURIComponent(id)}/guardian-wipe`, { method: 'POST', body: JSON.stringify({ capability }) }),
+  downloadEncryptedFile,
   status: (id: string) => request<{ id: string; status: PasteStatus }>(`/api/pastes/${encodeURIComponent(id)}/status`),
   createDraft: (content?: string) => request<{ roomId: string; ownerToken: string; createdAt: number }>('/api/drafts', { method: 'POST', body: JSON.stringify(content !== undefined ? { content } : {}) }),
   getDraft: (roomId: string) => request<{ roomId: string; content: string; updatedAt: number }>(`/api/drafts/${encodeURIComponent(roomId)}`),

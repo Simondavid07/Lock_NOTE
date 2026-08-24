@@ -1,5 +1,16 @@
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
 
+/** Fixed cryptographic policy mirrored by the browser client. */
+export const CRYPTO_POLICY = {
+  protocol: 'locknote/v1',
+  pbkdf2Iterations: 600_000,
+  saltBytes: 32,
+  ivBytes: 12,
+  ownerTokenBytes: 24,
+  receiptProofBytes: 32,
+  guardianCapabilityBytes: 32,
+} as const
+
 /** URL-safe random token (base64url), used for owner capabilities and room ids. */
 export function randomToken(bytes = 24): string {
   return randomBytes(bytes).toString('base64url')
@@ -14,7 +25,7 @@ export function now(): number {
   return Date.now()
 }
 
-/** Constant-time string comparison for owner tokens. */
+/** Constant-time string comparison for owner tokens and proof digests. */
 export function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a)
   const bb = Buffer.from(b)
@@ -24,6 +35,33 @@ export function safeEqual(a: string, b: string): boolean {
 
 export function sha256Hex(input: string): string {
   return createHash('sha256').update(input).digest('hex')
+}
+
+/** Stable base64url SHA-256 digest used to store proof/capability verifiers. */
+export function sha256Base64url(input: string): string {
+  return createHash('sha256').update(input).digest('base64url')
+}
+
+export function isBase64url(value: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(value)
+}
+
+export function isBase64urlBytes(value: string, expectedBytes: number): boolean {
+  if (!isBase64url(value)) return false
+  try {
+    return Buffer.from(value, 'base64url').byteLength === expectedBytes
+  } catch {
+    return false
+  }
+}
+
+export function isCanonicalBase64(value: string): boolean {
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) return false
+  try {
+    return Buffer.from(value, 'base64').toString('base64') === value
+  } catch {
+    return false
+  }
 }
 
 export const MS = {

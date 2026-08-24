@@ -31,27 +31,27 @@ Explain that the **copyable link, native share option, and QR code are three way
 
 For a visual reference, see the sealed delivery screenshot in [FEATURES.md](FEATURES.md#sealed-delivery-qr-handoff-and-sender-controls).
 
-### 3. Recipient read and burn lifecycle — 45 seconds
+### 3. Recipient read, seal verification, and burn lifecycle — 55 seconds
 
-Open the link in the recipient browser context. Decrypt and view the note. Return to or reload the recipient link to show that a burn-after-read note is no longer available.
+Before opening a sensitive one-time note, compare the four-word seal fingerprint with the sender through a separate channel. Then open the link in the recipient browser context, decrypt and view the note, and return to or reload the link to show that a burn-after-read note is no longer available.
 
-> “The server manages the one-time delivery state, but the plaintext appears only after browser-side decryption.”
+> “The server manages the one-time delivery state, but the plaintext and the authenticated delivery proof appear only after browser-side decryption.”
 
-This demonstrates the core functionality, lifecycle logic, and security model together.
+This demonstrates the core functionality, lifecycle logic, fingerprint verification habit, and security model together.
 
-### 4. Sender control — 30 seconds
+### 4. Sender control and verified receipt — 35 seconds
 
-Create a second note without burn-after-read. Use the owner controls to show preview, a receipt/view count, and remote withdrawal. After remote withdrawal, refresh the recipient route or explain that future reads are prevented.
+Create a second note without burn-after-read. Open it in the recipient browser, return to the owner controls, and show the **Verified opens** receipt. Explain that the receipt is created only after the browser decrypts a random proof inside the encrypted envelope; an API request alone cannot increment it. Then demonstrate remote withdrawal.
 
-> “Lock Note gives the sender lifecycle control after sharing: preview without burning, observe receipt metadata, and withdraw an active note.”
+> “Lock Note gives the sender lifecycle control after sharing: preview without burning, a cryptographic delivery acknowledgement, and withdrawal of an active server copy. It proves an envelope open, not human understanding.”
 
-### 5. Meaningful differentiation — 35 seconds
+### 5. Meaningful differentiation — 60 seconds
 
-Create a passphrase-protected note or attach a small non-sensitive file.
+Attach a small non-sensitive file and show that the recipient consumes a short-lived private lease through the API rather than receiving a public Storage path. Then create a third note with **Emergency Guardian Wipe** enabled, choose 2-of-3, and show three generated trustee cards. Paste one card into `/guardian-wipe` and show it is insufficient; add a second card to withdraw the note.
 
-> “Beyond a standard one-time paste, Lock Note supports an extra passphrase channel, encrypted files, time expiry, inactivity-based dead switches, owner withdrawal, and a documented pre-seal collaboration mode.”
+> “The guardians can jointly revoke the server copy but cannot decrypt the note, recover the key, or view the delivery link. The browser splits a separate revocation capability, not the content key.”
 
-If time allows, show the collaboration entry point and say clearly that drafts are a temporary pre-seal workspace rather than end-to-end encrypted co-editing.
+Mention that passphrase-protected burns require careful out-of-band passphrase delivery: the zero-knowledge service cannot know whether the passphrase was correct before one-time ciphertext delivery. If time allows, show the collaboration entry point and say clearly that drafts are temporary pre-seal workspace rather than end-to-end encrypted co-editing.
 
 ### 6. GitHub identity, private account profile, and browser-local vault — 40 seconds
 
@@ -71,7 +71,7 @@ Show the health endpoint or run the live smoke test:
 API_URL=https://lock-note-sigma.vercel.app npm run test:live
 ```
 
-The expected passing output covers health, note creation, safe metadata, owner preview, burn-after-read, receipts, draft sealing, and remote wipe. Point out the `version`, `X-Request-ID`, and `Server-Timing` fields as safe operational evidence.
+The expected passing output covers health, proof-enabled note creation, safe metadata, owner preview, burn-after-read, one verified receipt acknowledgement, one-use private file delivery, Guardian Wipe, draft sealing, and remote wipe. Point out the `version`, `X-Request-ID`, and `Server-Timing` fields as safe operational evidence.
 
 > “This is not a visual-only demo. The repository includes type checks, build validation, unit/integration tests, an automated axe/keyboard suite, a JavaScript bundle budget, pull-request CI, static security-header verification, and a live lifecycle test against the deployed Supabase-backed API.”
 
@@ -80,12 +80,16 @@ The expected passing output covers health, note creation, safe metadata, owner p
 | Criterion | One-sentence evidence statement |
 | --- | --- |
 | Problem and functionality | “It solves temporary sensitive sharing with browser-side encryption, one-time delivery, expiry, and sender withdrawal.” |
-| Innovation | “It combines fragment-keyed decryption, authenticated encryption, encrypted files, dead switches, seal fingerprints, and pre-seal collaboration.” |
+| Innovation | “It combines fragment-keyed decryption, authenticated delivery proofs, private one-use encrypted-file leases, seal verification, and Guardian Wipe revocation without giving guardians decryption power.” |
 | Architecture | “React/Vite performs cryptography in-browser; an Express API manages lifecycle state and redacted telemetry; Supabase stores encrypted records plus owner-only account metadata; Vercel hosts the deployed system with a static CSP.” |
 | UX and accessibility | “The app uses clear workflow states, session-aware private routes, keyboard-accessible controls, a skip link, theme support, actionable errors, and automated axe checks.” |
 | Reliability | “A versioned readiness endpoint, request IDs, safe timing, rate limits, protected maintenance, test suites, CI, bundle budgets, static-header checks, and live production smoke make the demo repeatable.” |
 | Documentation | “The README is supported by dedicated evaluation, feature, demo, architecture, security, API, testing, environment, and deployment documents.” |
 | Personalized product proof | “The GitHub-authenticated private profile, owner-only contact shortcuts, browser-local capability vault, QR delivery card, and seal fingerprint make the secure-sharing journey visible to reviewers.” |
+
+## Recording checklist
+
+Record the demo in a clean browser profile and use only synthetic text, a disposable test passphrase, and a harmless file. Include a short keyboard-only sequence: press `Tab` to reveal the Skip to content link, open the command palette, and close it with `Escape`. Show the `Quality gate` workflow result in GitHub, and replace the README placeholder only after uploading the final recording. Do not show environment files, browser DevTools containing credentials, Supabase service keys, owner capabilities, guardian shares in a public recording, or private OAuth settings.
 
 ## Troubleshooting during a demo
 
