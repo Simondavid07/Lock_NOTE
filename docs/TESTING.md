@@ -135,17 +135,17 @@ The production hardening release was validated with the following results:
 
 | Check | Result |
 | --- | --- |
-| TypeScript validation | Passed. |
-| Automated test suite for this release | **88 tests passed**: 30 server lifecycle/schema/API tests and 58 browser crypto/encoding/Guardian Wipe tests. The suite includes proof replay, private file-lease one-use/expiry/atomic-burn behavior, fixed crypto-policy validation, Guardian quorum/tamper cases, owner control, lifecycle, and draft regressions. |
-| Production build | Passed. |
+| TypeScript validation | Passed on the verified-delivery/Guardian Wipe release. |
+| Automated test suite | **88 tests passed**: 30 server lifecycle/schema/API tests and 58 browser crypto/encoding/Guardian Wipe tests. The suite includes proof replay, private file-lease one-use/expiry/atomic-burn behavior, fixed crypto-policy validation, Guardian quorum/tamper cases, owner control, lifecycle, and draft regressions. |
+| Production build and bundle budget | Passed: 31 JavaScript chunks, 3,860.0 KiB total, largest chunk 736.7 KiB against the 850 KiB budget. |
 | Production dependency audit | 0 high-severity production vulnerabilities found. |
-| Prior production deployment | READY for the preceding RLS hardening release. The verified-delivery/Guardian Wipe release remains pending migration, deployment, and live smoke at the time of this document update. |
-| Live lifecycle smoke test | Passed after Supabase RLS hardening. |
+| Current production deployment | **READY** from commit `8c697b1` (`feat: add verified delivery and guardian wipe`). |
+| Live lifecycle smoke test | Passed against the production Supabase-backed API: proof receipt, one-use private file lease, Guardian Wipe, draft seal, and owner wipe all succeeded. |
 | GitHub OAuth flow | Verified through the production callback and dashboard redirect. |
 | Post-deployment security review | HTTPS, HSTS, API hardening, CORS behavior, source-map access, sensitive-path fallback, and dependency checks passed within scoped automation. |
-| Accessibility regression suite | Passed: axe reported no serious or critical violations on public routes; command palette and skip-link keyboard checks passed. |
+| Accessibility regression suite | Passed: **6 Playwright + axe checks** reported no serious or critical violations on `/`, `/login`, `/how-it-works`, and `/guardian-wipe`; command-palette and skip-link keyboard checks also passed. |
 | Bundle budget | Passed: largest emitted JavaScript chunk was 736.7 KiB against an 850 KiB budget. |
-| CI and smoke workflows | Added: pull-request/main quality gate plus a scheduled/manual production lifecycle and static-header smoke workflow. |
+| CI and smoke workflows | The `CI` and `Quality gate` workflows both completed successfully for commit `8c697b1`; scheduled/manual production lifecycle and static-header smoke remain available. |
 
 ## Demo recording evidence
 
