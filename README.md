@@ -89,7 +89,7 @@ This flow keeps responsibilities clear: **GitHub verifies identity**, **Supabase
 | Resource | Link |
 | --- | --- |
 | Live application | `https://lock-note-sigma.vercel.app/` |
-| Video walkthrough | **Recording handoff:** replace `https://YOUR-DEMO-VIDEO-URL` after recording the [five-minute demo script](docs/DEMO.md#recording-checklist). |
+| Video walkthrough | **[Watch the final evaluator walkthrough on Google Drive](https://drive.google.com/file/d/1sHMRiAYQcckZ7U8eix1QL32SBXohKMQM/view?usp=drivesdk)** — a 2:47 narrated walkthrough of the live product, GitHub evidence, and Supabase schema. |
 | Evaluator demo script | [docs/DEMO.md](docs/DEMO.md) |
 | Rubric evidence guide | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Local application | `http://localhost:5173` |
