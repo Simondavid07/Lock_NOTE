@@ -121,12 +121,30 @@ function requireAuthenticatedClient(): SupabaseClient {
   return supabase
 }
 
+export function profileStorageUsername(value: string, userId: string): string {
+  const normalised = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 39)
+
+  if (/^[a-z0-9](?:[a-z0-9-]{0,37})$/.test(normalised)) return normalised
+
+  // A provider identity remains the display authority. This fallback exists only
+  // for the private database label, whose policy intentionally accepts GitHub's
+  // lowercase username grammar rather than arbitrary provider metadata.
+  return `user-${userId.replace(/-/g, '').slice(0, 12)}`
+}
+
 function profileFromRow(user: User, row: ProfileRow | null): AccountProfile {
   const provider = toAuthenticatedUser(user)
   return {
     ...provider,
     name: row?.display_name?.trim() || provider.name,
-    username: row?.username?.trim() || provider.username,
+    // `profiles.username` is a normalized storage label. Preserve the provider
+    // value for presentation so GitHub's casing remains visible to its owner.
+    username: provider.username,
     avatarUrl: row?.avatar_url?.trim() || provider.avatarUrl,
     bio: row?.bio ?? '',
   }
@@ -143,7 +161,7 @@ export async function loadAccountProfile(user: User): Promise<AccountProfile> {
   const initialRow = {
     id: user.id,
     display_name: provider.name,
-    username: provider.username,
+    username: profileStorageUsername(provider.username, user.id),
     avatar_url: provider.avatarUrl,
     bio: '',
   }
