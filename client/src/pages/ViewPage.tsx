@@ -10,14 +10,16 @@ import { ExpiryCountdown } from '../components/ExpiryCountdown'
 import {
   deriveEncryptionKey,
   decrypt,
+  encrypt,
   openContent,
   parseFragment,
   fingerprint,
   aadForFile,
+  aadForReply,
   IntegrityError,
   type ContentEnvelope,
 } from '../lib/crypto'
-import { base64urlToBytes, toArrayBuffer, formatRelative } from '../lib/encoding'
+import { base64urlToBytes, bytesToBase64url, bytesToUtf8, formatRelative, toArrayBuffer, utf8ToBytes } from '../lib/encoding'
 import { api, type ConsumeResult, type Receipt } from '../lib/api'
 
 type ViewState =
@@ -61,6 +63,11 @@ export function ViewPage() {
   const [wiping, setWiping] = useState(false)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
   const [showReceipt, setShowReceipt] = useState(false)
+  const [replyText, setReplyText] = useState('')
+  const [replying, setReplying] = useState(false)
+  const [showReplies, setShowReplies] = useState(false)
+  const [loadingReplies, setLoadingReplies] = useState(false)
+  const [replies, setReplies] = useState<Array<{ id: string; body: string; createdAt: number }>>([])
   const revealedRef = useRef(false)
 
   const ownerToken = useMemo(() => sessionStorage.getItem(`locknote:owner:${id}`), [id])
@@ -169,6 +176,65 @@ export function ViewPage() {
     setPassError(false)
     await reveal(consume, passphrase)
   }, [state, passphrase, reveal])
+
+  async function deriveCurrentKey(consume: ConsumeResult): Promise<CryptoKey> {
+    const { secret } = parseFragment(window.location.hash)
+    return deriveEncryptionKey(secret, passphrase || null, {
+      salt: base64urlToBytes(consume.salt),
+      kdf: consume.kdf,
+      iterations: consume.iterations,
+    })
+  }
+
+  async function submitReply(consume: ConsumeResult, envelope: ContentEnvelope, preview: boolean): Promise<void> {
+    const body = replyText.trim()
+    if (!body || preview || !envelope.replyCapability) return
+    setReplying(true)
+    try {
+      const key = await deriveCurrentKey(consume)
+      const payload = utf8ToBytes(JSON.stringify({ v: 1, body }))
+      const { ciphertext, iv } = await encrypt(key, payload, aadForReply(consume.id))
+      await api.addReply(consume.id, {
+        capability: envelope.replyCapability,
+        ciphertext: bytesToBase64url(ciphertext),
+        iv: bytesToBase64url(iv),
+      })
+      setReplyText('')
+      toast.success('Encrypted reply sent')
+    } catch {
+      toast.error('Could not encrypt and send this reply')
+    } finally {
+      setReplying(false)
+    }
+  }
+
+  async function fetchReplies(consume: ConsumeResult): Promise<void> {
+    if (!ownerToken) return
+    setLoadingReplies(true)
+    try {
+      const data = await api.replies(consume.id, ownerToken)
+      const key = await deriveCurrentKey(consume)
+      const opened = await Promise.all(
+        data.replies.map(async (reply) => {
+          try {
+            const plaintext = await decrypt(key, base64urlToBytes(reply.ciphertext), base64urlToBytes(reply.iv), aadForReply(consume.id))
+            const parsed: unknown = JSON.parse(bytesToUtf8(plaintext))
+            if (!parsed || typeof parsed !== 'object' || !('v' in parsed) || !('body' in parsed) || (parsed as { v?: unknown }).v !== 1 || typeof (parsed as { body?: unknown }).body !== 'string') {
+              throw new Error('invalid reply envelope')
+            }
+            return { id: reply.id, body: (parsed as { body: string }).body, createdAt: reply.createdAt }
+          } catch {
+            return { id: reply.id, body: '[Encrypted reply could not be verified]', createdAt: reply.createdAt }
+          }
+        }),
+      )
+      setReplies(opened)
+    } catch {
+      toast.error('Could not load encrypted replies')
+    } finally {
+      setLoadingReplies(false)
+    }
+  }
 
   async function handleWipe(): Promise<void> {
     if (!ownerToken) return
@@ -365,6 +431,26 @@ export function ViewPage() {
                 </Card>
               )}
 
+              {!preview && envelope.replyCapability && (
+                <Card className="p-5 border-mint-deep/25 bg-mint/10 dark:bg-mint-dark/10">
+                  <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">💬 Send an encrypted reply</h2>
+                  <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">Your message is encrypted locally. Anyone holding this link may be able to read it; no recipient identity is verified.</p>
+                  <textarea
+                    value={replyText}
+                    onChange={(event) => setReplyText(event.target.value.slice(0, 1200))}
+                    maxLength={1200}
+                    rows={3}
+                    placeholder="Optional confirmation or follow-up…"
+                    className="mt-3 w-full resize-y rounded-xl border border-mint-deep/30 bg-white/80 p-3 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-mint-deep dark:bg-void/70 dark:text-zinc-100"
+                    aria-label="Encrypted reply"
+                  />
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <span className="text-[11px] text-zinc-400">{replyText.length}/1200</span>
+                    <Button size="sm" loading={replying} disabled={!replyText.trim()} onClick={() => void submitReply(consume, envelope, preview)}>Encrypt &amp; Send Reply</Button>
+                  </div>
+                </Card>
+              )}
+
               <div className="flex items-center justify-between text-xs text-zinc-400 pt-2">
                 <span className="flex items-center gap-1.5">
                   <span>🛡️</span> Client-side Web Crypto (AES-256-GCM)
@@ -407,6 +493,20 @@ export function ViewPage() {
                     >
                       📊 {showReceipt ? 'Hide View Receipt' : 'View Read Receipts'}
                     </Button>
+                    {envelope.replyCapability && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="w-full justify-start text-xs"
+                        loading={loadingReplies}
+                        onClick={() => {
+                          if (!showReplies) void fetchReplies(consume)
+                          setShowReplies(!showReplies)
+                        }}
+                      >
+                        💬 {showReplies ? 'Hide Encrypted Replies' : 'View Encrypted Replies'}
+                      </Button>
+                    )}
                     <Button variant="danger" size="sm" className="w-full justify-start text-xs" loading={wiping} onClick={() => void handleWipe()}>
                       🗑️ Remote Wipe Paste
                     </Button>
@@ -418,6 +518,18 @@ export function ViewPage() {
                       <p><strong>Acknowledged:</strong> {receipt.receiptAcknowledgedAt ? formatRelative(receipt.receiptAcknowledgedAt - Date.now()) : 'No verified acknowledgement yet'}</p>
                       <p><strong>First verified:</strong> {receipt.firstViewedAt ? formatRelative(receipt.firstViewedAt - Date.now()) : 'Never'}</p>
                       <p><strong>Last verified:</strong> {receipt.lastViewedAt ? formatRelative(receipt.lastViewedAt - Date.now()) : 'Never'}</p>
+                    </div>
+                  )}
+                  {showReplies && (
+                    <div className="mt-3 pt-3 border-t border-lilac-deep/20 space-y-2">
+                      {replies.length === 0 ? (
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400">No encrypted replies yet.</p>
+                      ) : replies.map((reply) => (
+                        <div key={reply.id} className="rounded-lg bg-white/60 p-2.5 text-xs dark:bg-void/50">
+                          <p className="whitespace-pre-wrap text-zinc-700 dark:text-zinc-200">{reply.body}</p>
+                          <p className="mt-1 text-[10px] text-zinc-400">{formatRelative(reply.createdAt - Date.now())}</p>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </Card>

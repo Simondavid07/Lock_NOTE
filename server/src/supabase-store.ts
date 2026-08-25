@@ -3,6 +3,7 @@ import type {
   ConsumeOutcome,
   CreatePasteInput,
   DraftRecord,
+  EncryptedReply,
   GuardianPolicy,
   PasteRecord,
   PasteStatus,
@@ -38,6 +39,8 @@ interface PasteRow {
   guardian_verifier: string | null
   guardian_threshold: number | null
   guardian_total: number | null
+  allow_replies: boolean
+  reply_verifier: string | null
   file_lease_hash: string | null
   file_lease_expires_at: number | null
   burned: boolean
@@ -65,6 +68,8 @@ function toRow(input: CreatePasteInput): Omit<PasteRow, 'view_count' | 'first_vi
     guardian_verifier: input.guardianVerifier,
     guardian_threshold: input.guardianPolicy?.threshold ?? null,
     guardian_total: input.guardianPolicy?.total ?? null,
+    allow_replies: input.allowReplies,
+    reply_verifier: input.replyVerifier,
     file_lease_hash: null,
     file_lease_expires_at: null,
   }
@@ -73,6 +78,17 @@ function toRow(input: CreatePasteInput): Omit<PasteRow, 'view_count' | 'first_vi
 function guardianPolicyFromRow(row: PasteRow): GuardianPolicy | null {
   if (!row.guardian_verifier || !row.guardian_threshold || !row.guardian_total) return null
   return { threshold: row.guardian_threshold, total: row.guardian_total }
+}
+
+interface ReplyRow {
+  id: string
+  ciphertext: string
+  iv: string
+  created_at: number
+}
+
+function replyFromRow(row: ReplyRow): EncryptedReply {
+  return { id: row.id, ciphertext: row.ciphertext, iv: row.iv, createdAt: row.created_at }
 }
 
 function fromRow(row: PasteRow): PasteRecord {
@@ -100,6 +116,8 @@ function fromRow(row: PasteRow): PasteRecord {
     receiptAcknowledgedAt: row.receipt_acknowledged_at,
     guardianVerifier: row.guardian_verifier,
     guardianPolicy: guardianPolicyFromRow(row),
+    allowReplies: row.allow_replies,
+    replyVerifier: row.reply_verifier,
     burned: row.burned,
   }
 }
@@ -231,6 +249,28 @@ export class SupabaseStore implements PasteStore {
     if (error) throw new Error(`supabase acknowledgement failed: ${error.message}`)
     if (!data) return null
     return { acknowledgedAt: (data as { receipt_acknowledged_at: number }).receipt_acknowledged_at }
+  }
+
+  async addReply(id: string, capability: string, reply: Omit<EncryptedReply, 'createdAt'>): Promise<EncryptedReply | null> {
+    const { data, error } = await this.client
+      .rpc('locknote_add_encrypted_reply', {
+        p_paste_id: id,
+        p_reply_verifier: sha256Base64url(capability),
+        p_reply_id: reply.id,
+        p_ciphertext: reply.ciphertext,
+        p_iv: reply.iv,
+      })
+      .maybeSingle()
+    if (error) throw new Error(`supabase encrypted reply failed: ${error.message}`)
+    return data ? replyFromRow(data as ReplyRow) : null
+  }
+
+  async replies(id: string, ownerToken: string): Promise<EncryptedReply[] | null> {
+    const record = await this.get(id)
+    if (!record || computeStatus(record, Date.now()) !== 'alive' || !safeEqual(ownerToken, record.ownerToken)) return null
+    const { data, error } = await this.client.from('paste_replies').select('id,ciphertext,iv,created_at').eq('paste_id', id).order('created_at', { ascending: true })
+    if (error) throw new Error(`supabase encrypted replies failed: ${error.message}`)
+    return (data ?? []).map((row) => replyFromRow(row as ReplyRow))
   }
 
   async destroy(id: string, ownerToken: string): Promise<boolean> {

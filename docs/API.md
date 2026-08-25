@@ -24,6 +24,9 @@ Creates a sealed encrypted envelope. New records use fixed crypto policy: a 32-b
   "ttlSeconds": 86400,
   "ownerToken": "24_byte_base64url_owner_capability",
   "receiptProofHash": "sha256_base64url_of_encrypted_receipt_proof",
+  "replies": {
+    "verifier": "sha256_base64url_of_encrypted_reply_capability"
+  },
   "guardian": {
     "threshold": 2,
     "total": 3,
@@ -32,7 +35,7 @@ Creates a sealed encrypted envelope. New records use fixed crypto policy: a 32-b
 }
 ```
 
-`guardian` is optional. Its verifier represents a browser-generated revocation capability, **not** a note key. File records additionally supply canonical base64 ciphertext with an AES-GCM-tag-adjusted size and a separate 12-byte file IV.
+`guardian` is optional. Its verifier represents a browser-generated revocation capability, **not** a note key. `replies` is optional and may not be combined with `burnAfterRead: true`; its raw 32-byte capability remains inside authenticated content ciphertext and never reaches the API at creation. File records additionally supply canonical base64 ciphertext with an AES-GCM-tag-adjusted size and a separate 12-byte file IV.
 
 The response returns the created ID, lifecycle state, timestamps, and the submitted owner capability. The owner capability is intentionally returned once; it must not be logged or stored in an account profile.
 
@@ -89,11 +92,37 @@ The owner retrieves verified lifecycle evidence with its owner capability.
 
 The result reports `viewCount`, first/last verified timestamps, and `receiptAcknowledgedAt`. It proves an encrypted-envelope acknowledgement, not human comprehension.
 
+## Encrypted recipient replies
+
+### `POST /api/pastes/:id/replies`
+
+A recipient browser calls this only after local envelope decryption reveals the opt-in reply capability. It first encrypts the reply JSON in-browser with the existing content key and reply-specific AAD `${pasteId}|locknote/v1|reply`.
+
+```json
+{
+  "capability": "32_byte_base64url_raw_reply_capability",
+  "ciphertext": "base64url_aes_gcm_reply_ciphertext",
+  "iv": "12_byte_base64url_reply_iv"
+}
+```
+
+The server stores only opaque ciphertext, public IV, server timestamp, and a parent reference. It hashes the submitted capability and uses a locked server-role-only database operation to check the verifier, active parent lifecycle, and 20-reply cap. It returns `201` on success and a non-distinguishing `404` for unavailable parents, disabled replies, exhausted lifecycle, invalid capability, or a full reply limit. Replies never update verified-open timestamps or dead-switch activity.
+
+### `POST /api/pastes/:id/replies/owner`
+
+The sender retrieves opaque reply envelopes using the existing owner capability:
+
+```json
+{ "ownerToken": "24_byte_base64url_owner_capability" }
+```
+
+The endpoint returns `Cache-Control: no-store` and an ordered reply envelope list only for an active parent and matching owner capability. The sender browser decrypts each reply locally. A reply is voluntary and **does not authenticate the recipient’s identity**; anyone holding the full share link may be able to submit or decrypt a reply.
+
 ## Revocation
 
 ### `DELETE /api/pastes/:id`
 
-The owner capability deletes the active record and attempts encrypted-file cleanup.
+The owner capability deletes the active record, cascades encrypted-reply envelope deletion, and attempts encrypted-file cleanup.
 
 ### `POST /api/pastes/:id/guardian-wipe`
 
@@ -103,7 +132,7 @@ A Guardian Wipe quorum reconstructs a separate browser-only capability and submi
 { "capability": "32_byte_base64url_reconstructed_wipe_capability" }
 ```
 
-The API compares only its SHA-256 verifier and deletes the record on a match. It does not receive guardian shares, a delivery link, a note key, or plaintext.
+The API compares only its SHA-256 verifier and deletes the record on a match. Parent deletion cascades to opaque encrypted replies. It does not receive guardian shares, a delivery link, a note key, or plaintext.
 
 ## Drafts and health
 

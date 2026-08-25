@@ -2,13 +2,14 @@ import type {
   ConsumeOutcome,
   CreatePasteInput,
   DraftRecord,
+  EncryptedReply,
   PasteRecord,
   PasteStatus,
   ReceiptInfo,
 } from './types.js'
 import type { DraftStore, PasteStore, StoreHealth } from './store.js'
 import { computeStatus, isDead } from './store.js'
-import { randomToken, safeEqual, sha256Base64url } from './util.js'
+import { LIMITS, randomToken, safeEqual, sha256Base64url } from './util.js'
 import { toMetadata, toReceipt } from './helpers.js'
 
 /**
@@ -20,6 +21,7 @@ export class MemoryStore implements PasteStore, DraftStore {
   readonly kind = 'memory' as const
   private pastes = new Map<string, PasteRecord>()
   private drafts = new Map<string, DraftRecord>()
+  private repliesByPaste = new Map<string, EncryptedReply[]>()
   private fileLeases = new Map<string, { id: string; path: string; expiresAt: number }>()
   private readonly clock: () => number
 
@@ -108,10 +110,29 @@ export class MemoryStore implements PasteStore, DraftStore {
     return { acknowledgedAt: nowMs }
   }
 
+  async addReply(id: string, capability: string, reply: Omit<EncryptedReply, 'createdAt'>): Promise<EncryptedReply | null> {
+    const record = this.pastes.get(id)
+    if (!record || computeStatus(record, this.clock()) !== 'alive' || !record.allowReplies || !record.replyVerifier) return null
+    if (!safeEqual(sha256Base64url(capability), record.replyVerifier)) return null
+    const existing = this.repliesByPaste.get(id) ?? []
+    if (existing.length >= LIMITS.replyMaxPerPaste) return null
+    const stored: EncryptedReply = { ...reply, createdAt: this.clock() }
+    existing.push(stored)
+    this.repliesByPaste.set(id, existing)
+    return stored
+  }
+
+  async replies(id: string, ownerToken: string): Promise<EncryptedReply[] | null> {
+    const record = this.pastes.get(id)
+    if (!record || computeStatus(record, this.clock()) !== 'alive' || !safeEqual(ownerToken, record.ownerToken)) return null
+    return [...(this.repliesByPaste.get(id) ?? [])]
+  }
+
   async destroy(id: string, ownerToken: string): Promise<boolean> {
     const record = this.pastes.get(id)
     if (!record || !safeEqual(ownerToken, record.ownerToken)) return false
     const removed = this.pastes.delete(id)
+    this.repliesByPaste.delete(id)
     for (const [token, lease] of this.fileLeases) if (lease.id === id) this.fileLeases.delete(token)
     return removed
   }
@@ -120,6 +141,7 @@ export class MemoryStore implements PasteStore, DraftStore {
     const record = this.pastes.get(id)
     if (!record?.guardianVerifier || !safeEqual(sha256Base64url(capability), record.guardianVerifier)) return false
     const removed = this.pastes.delete(id)
+    this.repliesByPaste.delete(id)
     for (const [token, lease] of this.fileLeases) if (lease.id === id) this.fileLeases.delete(token)
     return removed
   }
@@ -140,6 +162,7 @@ export class MemoryStore implements PasteStore, DraftStore {
     for (const [id, record] of this.pastes) {
       if ((record.expiresAt !== null && record.expiresAt <= nowMs) || isDead(record, nowMs)) {
         this.pastes.delete(id)
+        this.repliesByPaste.delete(id)
         purged += 1
       }
     }

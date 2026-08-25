@@ -4,7 +4,7 @@ import type { FileBlobStore } from '../blob-store.js'
 import { toMetadata } from '../helpers.js'
 import type { AuditSink, PasteRecord } from '../types.js'
 import type { PasteStore } from '../store.js'
-import { acknowledgeSchema, consumeSchema, createPasteSchema, fileLeaseSchema, guardianWipeSchema, ownerSchema } from '../schemas.js'
+import { acknowledgeSchema, consumeSchema, createPasteSchema, fileLeaseSchema, guardianWipeSchema, ownerSchema, replySchema } from '../schemas.js'
 import { randomId, ttlToExpiry } from '../util.js'
 
 const bytesFromBase64 = (value: string): Uint8Array => new Uint8Array(Buffer.from(value, 'base64'))
@@ -45,6 +45,13 @@ export function pastesRouter(deps: { store: PasteStore; files: FileBlobStore; au
     legacyHeaders: false,
     message: { error: 'Too many requests. Slow down.' },
   })
+  const replyLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 20,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Too many encrypted replies. Slow down.' },
+  })
 
   router.post('/', createLimiter, async (req, res, next) => {
     let storagePath: string | null = null
@@ -81,6 +88,8 @@ export function pastesRouter(deps: { store: PasteStore; files: FileBlobStore; au
         expiresAt,
         ownerToken: body.ownerToken,
         receiptProofHash: body.receiptProofHash,
+        allowReplies: Boolean(body.replies),
+        replyVerifier: body.replies?.verifier ?? null,
         guardianVerifier: body.guardian?.verifier ?? null,
         guardianPolicy: body.guardian ? { threshold: body.guardian.threshold, total: body.guardian.total } : null,
       })
@@ -173,6 +182,39 @@ export function pastesRouter(deps: { store: PasteStore; files: FileBlobStore; au
       }
       void deps.audit.record(id, 'paste:acknowledged')
       res.status(201).json({ acknowledgedAt: result.acknowledgedAt })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  /** Submit a bounded opaque encrypted reply. The capability is revealed only after local envelope decryption. */
+  router.post('/:id/replies', replyLimiter, async (req, res, next) => {
+    try {
+      const id = String(req.params.id ?? '')
+      const body = replySchema.parse(req.body ?? {})
+      const reply = await deps.store.addReply(id, body.capability, { id: randomId(), ciphertext: body.ciphertext, iv: body.iv })
+      if (!reply) {
+        res.status(404).json({ error: 'not_available_or_invalid_reply_capability' })
+        return
+      }
+      void deps.audit.record(id, 'paste:reply_added')
+      res.status(201).json(reply)
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  /** The sender’s owner capability is required to retrieve opaque replies for local decryption. */
+  router.post('/:id/replies/owner', consumeLimiter, async (req, res, next) => {
+    try {
+      const id = String(req.params.id ?? '')
+      const replies = await deps.store.replies(id, ownerSchema.parse(req.body ?? {}).ownerToken)
+      if (!replies) {
+        res.status(404).json({ error: 'not_found_or_forbidden' })
+        return
+      }
+      res.setHeader('Cache-Control', 'no-store, max-age=0')
+      res.json({ replies })
     } catch (error) {
       next(error)
     }

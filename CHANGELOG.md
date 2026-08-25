@@ -2,6 +2,17 @@
 
 All notable changes to Lock Note are documented here. The project uses these entries to explain **why** a release changed the security or delivery model, not merely which files changed.
 
+## 2026-08-25 — Encrypted recipient replies
+
+This release adds a deliberate two-way delivery option without turning Lock Note into a plaintext messaging service or weakening the verified-delivery model.
+
+| Area | Change | Why it matters |
+| --- | --- | --- |
+| **Opt-in encrypted replies** | Senders may enable short recipient replies on non-burn notes. A fresh reply capability is embedded only inside the AES-GCM-authenticated content envelope; the database stores only its SHA-256 verifier. | A recipient can voluntarily confirm or ask a follow-up after decrypting, while a bare paste ID cannot inject replies. |
+| **Domain separation and ownership** | Reply plaintext is encrypted in the browser with a dedicated `${pasteId}|locknote/v1|reply` AAD domain. The sender retrieves opaque reply envelopes only with the owner capability and decrypts them locally. | Reply ciphertext cannot be replayed as note/file ciphertext, and the API never gains plaintext, a content key, passphrase, raw reply capability, or recipient identity. |
+| **Lifecycle enforcement** | A locked service-role-only database function accepts replies only for active reply-enabled parents, caps each note at 20 replies, and parent deletion cascades to reply ciphertext. Replies do not refresh a dead switch. | A reply cannot become a keepalive channel, burn-after-read remains exactly-once delivery, and owner/Guardian/expiry cleanup removes future reply access. |
+| **Evidence** | Added browser AAD/capability tests, server capability/owner/wipe/dead-switch tests, and production-smoke coverage. | The feature is tested as a security lifecycle, not only as a UI panel. |
+
 ## 2026-08-24 — Verified delivery and Guardian Wipe
 
 This release turns Lock Note from a generic encrypted paste service into a more verifiable sender-control workflow.

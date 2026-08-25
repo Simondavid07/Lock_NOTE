@@ -9,6 +9,7 @@ export const CRYPTO_POLICY = {
   ownerTokenBytes: 24,
   receiptProofBytes: 32,
   guardianCapabilityBytes: 32,
+  replyCapabilityBytes: 32,
 } as const
 
 /** URL-safe random token (base64url), used for owner capabilities and room ids. */
@@ -90,4 +91,6 @@ export const LIMITS = {
   contentPayload: 1_400_000, // ~1 MB plaintext equivalent
   fileStoragePayload: 6_700_000, // ~5 MB plaintext file, base64 encoded
   fileRawBytes: 5_000_000,
+  replyCiphertext: 8_192,
+  replyMaxPerPaste: 20,
 } as const

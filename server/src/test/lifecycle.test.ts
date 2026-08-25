@@ -207,6 +207,62 @@ describe('read receipts', () => {
   })
 })
 
+describe('encrypted recipient replies', () => {
+  let ctx: TestContext
+  const replyCapability = 'ERERERERERERERERERERERERERERERERERERERERERE'
+  const replyBody = {
+    capability: replyCapability,
+    ciphertext: 'cmVwbHktY2lwaGVydGV4dC1ibG9iLXByaXZhdGU',
+    iv: 'CQkJCQkJCQkJCQkJ',
+  }
+
+  beforeEach(() => {
+    ctx = makeTestApp()
+  })
+
+  it('stores only opaque reply data after a verifier-matched capability and returns it only to the owner', async () => {
+    const created = await api(ctx.app).post('/api/pastes').send(createPayload({ replies: { verifier: sha256Base64url(replyCapability) } }))
+    const id = created.body.id as string
+
+    const guessed = await api(ctx.app).post(`/api/pastes/${id}/replies`).send({ ...replyBody, capability: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' })
+    expect(guessed.status).toBe(404)
+
+    const added = await api(ctx.app).post(`/api/pastes/${id}/replies`).send(replyBody)
+    expect(added.status).toBe(201)
+    expect(added.body.ciphertext).toBe(replyBody.ciphertext)
+    expect(added.body.capability).toBeUndefined()
+
+    const denied = await api(ctx.app).post(`/api/pastes/${id}/replies/owner`).send({ ownerToken: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' })
+    expect(denied.status).toBe(404)
+
+    const ownerReplies = await api(ctx.app).post(`/api/pastes/${id}/replies/owner`).send({ ownerToken: created.body.ownerToken })
+    expect(ownerReplies.status).toBe(200)
+    expect(ownerReplies.headers['cache-control']).toContain('no-store')
+    expect(ownerReplies.body.replies).toHaveLength(1)
+    expect(ownerReplies.body.replies[0].ciphertext).toBe(replyBody.ciphertext)
+  })
+
+  it('rejects reply policy for burn-after-read records and removes reply ciphertext on owner wipe', async () => {
+    const rejected = await api(ctx.app).post('/api/pastes').send(createPayload({ burnAfterRead: true, replies: { verifier: sha256Base64url(replyCapability) } }))
+    expect(rejected.status).toBe(400)
+
+    const created = await api(ctx.app).post('/api/pastes').send(createPayload({ replies: { verifier: sha256Base64url(replyCapability) } }))
+    const id = created.body.id as string
+    expect((await api(ctx.app).post(`/api/pastes/${id}/replies`).send(replyBody)).status).toBe(201)
+    expect((await api(ctx.app).delete(`/api/pastes/${id}`).send({ ownerToken: created.body.ownerToken })).status).toBe(204)
+    expect((await api(ctx.app).post(`/api/pastes/${id}/replies/owner`).send({ ownerToken: created.body.ownerToken })).status).toBe(404)
+  })
+
+  it('does not let replies refresh a dead-switch timer', async () => {
+    const created = await api(ctx.app).post('/api/pastes').send(createPayload({ deadSwitchDays: 1, replies: { verifier: sha256Base64url(replyCapability) } }))
+    const id = created.body.id as string
+    expect((await api(ctx.app).post(`/api/pastes/${id}/replies`).send(replyBody)).status).toBe(201)
+    ctx.advance(25 * 3_600_000)
+    expect((await api(ctx.app).get(`/api/pastes/${id}`)).body.status).toBe('dead')
+    expect((await api(ctx.app).post(`/api/pastes/${id}/replies`).send(replyBody)).status).toBe(404)
+  })
+})
+
 describe('expiry & dead switch', () => {
   let ctx: TestContext
 

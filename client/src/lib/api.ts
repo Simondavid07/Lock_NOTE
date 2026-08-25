@@ -38,6 +38,13 @@ export interface ConsumeResult {
   burnAfterRead: boolean
 }
 
+export interface EncryptedReply {
+  id: string
+  ciphertext: string
+  iv: string
+  createdAt: number
+}
+
 export interface Receipt {
   id: string
   createdAt: number
@@ -65,6 +72,8 @@ export interface CreatePasteRequest {
   ownerToken: string
   /** SHA-256 verifier; the raw proof is encrypted inside the envelope. */
   receiptProofHash: string
+  /** Optional reply verifier; raw reply capability remains inside encrypted content. */
+  replies?: { verifier: string }
   /** Optional K-of-N Guardian Wipe verifier; it is never a content key. */
   guardian?: { threshold: number; total: number; verifier: string }
   file?: { storagePayload: string; size: number; fileIv: string }
@@ -144,6 +153,10 @@ export const api = {
     request<ConsumeResult>(`/api/pastes/${encodeURIComponent(id)}/consume`, { method: 'POST', body: JSON.stringify(ownerToken ? { ownerToken } : {}) }),
   acknowledge: (id: string, proof: string) =>
     request<{ acknowledgedAt: number }>(`/api/pastes/${encodeURIComponent(id)}/acknowledge`, { method: 'POST', body: JSON.stringify({ proof }) }),
+  addReply: (id: string, body: { capability: string; ciphertext: string; iv: string }) =>
+    request<EncryptedReply>(`/api/pastes/${encodeURIComponent(id)}/replies`, { method: 'POST', body: JSON.stringify(body) }),
+  replies: (id: string, ownerToken: string) =>
+    request<{ replies: EncryptedReply[] }>(`/api/pastes/${encodeURIComponent(id)}/replies/owner`, { method: 'POST', body: JSON.stringify({ ownerToken }) }),
   receipt: (id: string, ownerToken: string) =>
     request<Receipt>(`/api/pastes/${encodeURIComponent(id)}/receipt`, { method: 'POST', body: JSON.stringify({ ownerToken }) }),
   destroy: (id: string, ownerToken: string) =>

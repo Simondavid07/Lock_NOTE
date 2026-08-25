@@ -16,8 +16,8 @@ Locknote is documented and tested as a complete submission rather than a visual 
 
 | Evaluation criterion | Review-ready evidence |
 | --- | --- |
-| **Problem Understanding & Core Functionality** | Browser-side encryption, fragment-keyed sharing, burn-on-read, expiry, remote withdrawal, encrypted files, and delivery receipts. |
-| **Innovation & Meaningful Differentiation** | Proof-based delivery acknowledgements, private one-use encrypted-file leases, Guardian Wipe threshold revocation, dead switches, seal fingerprints, and pre-seal realtime collaboration. |
+| **Problem Understanding & Core Functionality** | Browser-side encryption, fragment-keyed sharing, burn-on-read, expiry, remote withdrawal, encrypted files, optional encrypted recipient replies, and delivery receipts. |
+| **Innovation & Meaningful Differentiation** | Proof-based delivery acknowledgements, private one-use encrypted-file leases, opt-in encrypted replies, Guardian Wipe threshold revocation, dead switches, seal fingerprints, and pre-seal realtime collaboration. |
 | **Technical Implementation & Architecture** | React/Vite client, Web Crypto API, Express/Zod/Helmet API, Supabase Auth and owner-only RLS account tables, Vercel functions, static CSP, and typed tests. |
 | **User Experience & Accessibility** | Intentional compose-to-share workflow, theme support, session-aware protected routes, keyboard command palette, skip link, semantic controls, responsive views, actionable errors, and automated axe checks. |
 | **Performance & Reliability / Demo Quality** | Health/version readiness, request IDs and safe timing telemetry, validation, rate limits, protected maintenance, bundle budget, live smoke test, and automated CI. |
@@ -109,6 +109,7 @@ This flow keeps responsibilities clear: **GitHub verifies identity**, **Supabase
 | **Remote withdrawal** | The owner capability lets a sender delete a still-active note and its encrypted file blob. |
 | **Private encrypted-file delivery** | Files are encrypted in the browser. The Storage bucket is non-public; only a successful consume receives a 60-second, one-use API lease for ciphertext bytes. |
 | **Verified delivery receipts** | A receipt is recorded only when a browser successfully decrypts a random proof authenticated inside a version-two envelope. The server stores only the proof hash, never the raw proof or plaintext. |
+| **Encrypted recipient replies** | A sender may opt in to short voluntary recipient replies. The raw reply capability is inside the authenticated envelope; the browser encrypts each reply under a dedicated AES-GCM AAD domain, while the API stores only opaque ciphertext and a hash-only capability verifier. Owner capability is required to retrieve replies. Replies are unavailable for burn-after-read notes and do not authenticate a human identity. |
 | **Guardian Wipe** | A sender can create 2-of-3 through 5-of-5 trustee cards. A quorum may withdraw the server copy, but a single card—or every card—cannot decrypt the note or reveal its key. |
 | **Realtime collaboration drafts** | Temporary draft rooms use Supabase Realtime and are sealed or automatically purged after inactivity. |
 | **GitHub sign-in** | GitHub OAuth is handled by Supabase Auth; GitHub credentials stay in Supabase provider configuration, never in the browser bundle or API source. |
@@ -135,7 +136,7 @@ Browser
                                             stores ciphertext only
 ```
 
-The encrypted envelope includes ciphertext, a public 32-byte salt, IV, fixed KDF configuration, and delivery metadata. New version-two envelopes also carry a random delivery proof inside authenticated ciphertext; only its SHA-256 verifier is stored. The service-role key is used **only by server-side API functions** to write and clean up encrypted records, private storage objects, and audit events. It must never be exposed through a `VITE_` variable or committed to source control.
+The encrypted envelope includes ciphertext, a public 32-byte salt, IV, fixed KDF configuration, and delivery metadata. New version-two envelopes also carry a random delivery proof inside authenticated ciphertext; only its SHA-256 verifier is stored. When the sender enables encrypted replies, a separate random reply capability also stays inside the envelope while the service retains only its SHA-256 verifier. The service-role key is used **only by server-side API functions** to write and clean up encrypted records, private storage objects, opaque replies, and audit events. It must never be exposed through a `VITE_` variable or committed to source control.
 
 > **Guardian Wipe is revocation, not recovery.** The browser splits a separate random wipe capability, not the encryption key. Guardian shares are checksum-protected and paste-bound; the service accepts only the reconstructed capability verifier. Guardians cannot open, decrypt, or recover the note.
 
@@ -143,7 +144,7 @@ The encrypted envelope includes ciphertext, a public 32-byte salt, IV, fixed KDF
 
 ### Known limitations and roadmap
 
-Lock Note cannot erase plaintext a recipient has already copied, downloaded, photographed, or screen-captured. A verified delivery receipt proves that a browser with the encrypted proof successfully opened the envelope; it does not prove human comprehension. Guardian Wipe revokes future server delivery but cannot retract a recipient copy. Collaboration rooms remain a temporary pre-seal workspace, not end-to-end encrypted co-editing. Planned work is limited to a staging-only load report, an optional independent security review, and user-recorded accessibility/demo evidence—rather than adding server-side access to plaintext or keys.
+Lock Note cannot erase plaintext a recipient has already copied, downloaded, photographed, or screen-captured. A verified delivery receipt proves that a browser with the encrypted proof successfully opened the envelope; it does not prove human comprehension. An encrypted reply is voluntary and does not authenticate a recipient identity; anyone holding the full link may be able to send or read one. Guardian Wipe revokes future server delivery but cannot retract a recipient copy. Collaboration rooms remain a temporary pre-seal workspace, not end-to-end encrypted co-editing. Planned work is limited to a staging-only load report, an optional independent security review, and user-recorded accessibility/demo evidence—rather than adding server-side access to plaintext or keys.
 
 ### Collaboration privacy boundary
 
@@ -154,8 +155,8 @@ Realtime collaboration is a **pre-seal drafting feature**, not an end-to-end enc
 | Layer | Technology | Responsibility |
 | --- | --- | --- |
 | Client | React 19, Vite, TypeScript, Tailwind, Motion | Encrypt/decrypt content, render the editor, manage share links, and use Supabase Auth/Realtime. |
-| API | Express 5, Zod, Helmet, rate limits | Enforces fixed KDF policy, issues private one-use encrypted-file leases, validates proof acknowledgements and Guardian Wipe verifiers, manages lifecycle operations, and emits privacy-safe timing/correlation metadata. |
-| Persistence | Supabase Postgres, private Storage, Realtime, Auth | Stores ciphertext, proof/capability verifiers, private encrypted file blobs, temporary collaboration drafts, and owner-only profile/contact metadata. It never stores note keys, raw proofs, guardian shares, or plaintext. |
+| API | Express 5, Zod, Helmet, rate limits | Enforces fixed KDF policy, issues private one-use encrypted-file leases, validates proof/reply/Guardian verifiers, manages lifecycle operations, and emits privacy-safe timing/correlation metadata. |
+| Persistence | Supabase Postgres, private Storage, Realtime, Auth | Stores ciphertext, hash-only capability verifiers, private encrypted file blobs, opaque encrypted reply envelopes, temporary collaboration drafts, and owner-only profile/contact metadata. It never stores note keys, raw proofs/capabilities, guardian shares, or plaintext. |
 | Hosting | Vercel | Builds the Vite SPA, serves Express API functions under `/api`, and calls the protected daily maintenance function. |
 
 ```text
@@ -236,11 +237,12 @@ The `SUPABASE_SERVICE_ROLE_KEY` is server-only. Do **not** put it in a `VITE_` v
 
 ### 3. Bootstrap Supabase
 
-For a new project, open **Supabase Dashboard → SQL Editor**, paste the complete contents of [`docs/sql/001_init.sql`](docs/sql/001_init.sql), and run it once. For an existing Locknote project, apply the migrations in numerical order through [`docs/sql/006_revoke_inherited_storage_privileges.sql`](docs/sql/006_revoke_inherited_storage_privileges.sql). These migrations are idempotent and create or harden:
+For a new project, open **Supabase Dashboard → SQL Editor**, paste the complete contents of [`docs/sql/001_init.sql`](docs/sql/001_init.sql), and run it once. For an existing Locknote project, apply the migrations in numerical order through [`docs/sql/007_encrypted_recipient_replies.sql`](docs/sql/007_encrypted_recipient_replies.sql). These migrations are idempotent and create or harden:
 
 - `public.pastes` for encrypted note envelopes;
 - `public.drafts` for short-lived collaboration rooms, with database access restricted to the server-side API while Realtime Broadcast and Presence handle ephemeral collaboration;
 - `public.events` for privacy-safe lifecycle audit events;
+- `public.paste_replies` for bounded opaque encrypted recipient-reply envelopes, accessible only through server-side service-role operations and removed when their parent note is deleted;
 - the private `secrets` bucket for encrypted file blobs, accessed only through a short-lived server-issued lease; and
 - recurring database cleanup for expired notes and old drafts.
 

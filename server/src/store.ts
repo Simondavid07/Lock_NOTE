@@ -1,6 +1,7 @@
 import type {
   ConsumeOutcome,
   CreatePasteInput,
+  EncryptedReply,
   FileLease,
   DraftRecord,
   PasteRecord,
@@ -34,6 +35,10 @@ export interface PasteStore {
   redeemFileLease(id: string, token: string): Promise<string | null>
   /** Atomically acknowledge a successfully decrypted envelope exactly once. */
   acknowledge(id: string, proof: string): Promise<{ acknowledgedAt: number } | null>
+  /** Store one opaque reply after verifying the reply capability carried inside decrypted content. */
+  addReply(id: string, capability: string, reply: Omit<EncryptedReply, 'createdAt'>): Promise<EncryptedReply | null>
+  /** Return opaque replies only to a sender holding the owner capability. */
+  replies(id: string, ownerToken: string): Promise<EncryptedReply[] | null>
   /** Destroy a record with the sender's owner capability. */
   destroy(id: string, ownerToken: string): Promise<boolean>
   /** Destroy a record with a reconstructed Guardian Wipe capability. */

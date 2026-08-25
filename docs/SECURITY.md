@@ -42,7 +42,11 @@ Locknote adheres to strict cryptographic principles to ensure zero-knowledge dat
 - **Risk**: A malicious party combines duplicate, altered, mixed-note, or mismatched threshold shares to obtain a revocation capability—or mistakes a guardian card for a decryption key.
 - **Mitigation**: Guardian cards are browser-generated Shamir shares over a separate wipe capability. Each card is versioned, paste-bound, share-set-bound, coordinate-bound, quorum-bound, payload-length-checked, and SHA-256 checksum-protected. Reconstruction rejects duplicates and mismatches locally; the server stores only the capability verifier. Guardians never receive the content key.
 
-### Threat Scenario 7: Shoulder Surfing / Out-of-Band Substitution
+### Threat Scenario 7: Encrypted Reply Capability Misuse
+- **Risk**: A party who knows a paste identifier attempts to inject a reply, read recipient replies, or use reply traffic to keep a dead-switch note alive.
+- **Mitigation and boundary**: Replies are opt-in and unavailable for burn-after-read notes. The raw reply capability exists only inside the AES-GCM-authenticated content envelope; the server retains only its SHA-256 verifier. Reply ciphertext is bound to a dedicated `${pasteId}|locknote/v1|reply` AAD domain, capped in size and count, and returned only after owner-capability verification. Reply traffic never changes verified-open or dead-switch timestamps. A reply is not an authenticated identity: anyone holding the full link may be able to reply or decrypt replies.
+
+### Threat Scenario 8: Shoulder Surfing / Out-of-Band Substitution
 - **Risk**: An intermediary modifies a link sent over chat/email.
 - **Mitigation**: Locknote generates a **Seal Fingerprint** (4-word mnemonic + color glyph). Senders can verify the fingerprint with recipients over another channel (voice/signal).
 
@@ -52,10 +56,10 @@ Locknote adheres to strict cryptographic principles to ensure zero-knowledge dat
 
 - **No Content Logging**: Request logs strictly exclude response bodies and payloads.
 - **Zod Strict Validation**: All REST routes sanitize inputs with Zod schemas. New envelopes must use a 32-byte salt, 12-byte IV, HKDF with zero iterations, or PBKDF2-SHA256 at exactly 600,000 iterations; hostile metadata cannot choose an arbitrary browser work factor.
-- **Strict Size Limits**: Text payloads capped at ~1 MB; file payloads capped at 5 MB.
-- **Rate Limiting**: Sliding window per-IP buckets on paste creation (20/min) and consumption (120/min).
+- **Strict Size Limits**: Text payloads capped at ~1 MB; file payloads capped at 5 MB; reply ciphertext is bounded to 8 KiB and 20 encrypted replies per active paste.
+- **Rate Limiting**: Sliding window per-IP buckets on paste creation (20/min), consumption (120/min), and encrypted reply submission (20/min).
 - **Constant-Time Comparison**: Owner capability tokens and verifier comparisons use `crypto.timingSafeEqual`.
-- **Hash-only Delivery State**: Receipt proofs, Guardian Wipe capabilities, and private file leases are persisted only as SHA-256 verifiers. Raw values are never logged, stored, or returned by an owner receipt endpoint.
+- **Hash-only Capability State**: Receipt proofs, Guardian Wipe capabilities, reply capabilities, and private file leases are persisted only as SHA-256 verifiers. Raw values are never logged, stored, or returned by owner endpoints.
 - **One-use File Leases**: The private Storage bucket cannot be read directly by browsers. A file delivery token is valid for 60 seconds and consumed on the first redemption attempt.
 
 - **Static Delivery Policy**: Vercel serves the application with an enforced CSP, restrictive Permissions Policy, `nosniff`, frame protection, COOP, CORP, and a strict referrer policy. The policy permits only Lock Note assets, required font/identity sources, and Supabase HTTPS/WebSocket connections.
@@ -73,3 +77,5 @@ The Supabase security advisor initially identified the database RLS auto-enable 
 The project’s free Supabase plan does not provide the HaveIBeenPwned leaked-password check. As a compensating baseline for the enabled email provider, production requires the current password for password changes, a twelve-character minimum, and lowercase, uppercase, numeric, and symbol characters. This does not change the zero-knowledge note flow or GitHub OAuth.
 
 Migration `005_verified_delivery_and_guardian_wipe.sql` adds receipt/guardian/file-lease verifiers and makes the file bucket non-public. The enforced browser boundary is a private `secrets` bucket, enabled Storage RLS, and no browser Storage-object policies; Supabase-managed baseline table-grant listings are not treated as authorization by themselves. It **must be applied before** the corresponding server release; legacy version-one records remain readable but do not claim cryptographic delivery receipts.
+
+Migration `007_encrypted_recipient_replies.sql` adds opt-in reply policy state and a private `paste_replies` table. Browser roles have no table policies; service-role API code invokes a server-role-only locked database function that verifies the hash-only reply capability, enforces active lifecycle state and the 20-reply cap, then inserts opaque reply ciphertext. Parent deletion cascades to reply ciphertext on owner wipe, Guardian Wipe, or expiry cleanup.

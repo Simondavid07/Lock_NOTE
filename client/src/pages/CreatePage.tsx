@@ -21,6 +21,7 @@ import {
   generateSecret,
   generateReceiptProof,
   generateGuardianCapability,
+  generateReplyCapability,
   sha256Base64url,
   PBKDF2_ITERATIONS,
   sealContent,
@@ -126,6 +127,7 @@ export function CreatePage() {
   const [fileError, setFileError] = useState<string | null>(null)
   const [ttl, setTtl] = useState<number>(86400)
   const [burn, setBurn] = useState(false)
+  const [allowReplies, setAllowReplies] = useState(false)
   const [deadSwitch, setDeadSwitch] = useState<number>(0)
   const [guardianEnabled, setGuardianEnabled] = useState(false)
   const [guardianThreshold, setGuardianThreshold] = useState(2)
@@ -179,6 +181,8 @@ export function CreatePage() {
 
       const receiptProof = generateReceiptProof()
       const receiptProofHash = await sha256Base64url(receiptProof)
+      const replyCapability = allowReplies && !burn ? generateReplyCapability() : null
+      const replyVerifier = replyCapability ? await sha256Base64url(replyCapability) : null
       const guardianCapability = guardianEnabled ? generateGuardianCapability() : null
       const guardianShares = guardianCapability
         ? await splitGuardianCapability(guardianCapability, id, guardianThreshold, guardianTotal)
@@ -191,10 +195,10 @@ export function CreatePage() {
       if (type === 'file' && file) {
         const raw = new Uint8Array(await file.arrayBuffer())
         const { ciphertext: fileCt, iv: fileIvBytes } = await encrypt(key, raw, aadForFile(id))
-        envelope = { v: 2, title: title || undefined, name: file.name, mime: file.type || 'application/octet-stream', receiptProof }
+        envelope = { v: 2, title: title || undefined, name: file.name, mime: file.type || 'application/octet-stream', receiptProof, replyCapability: replyCapability ?? undefined }
         filePayload = { storagePayload: bytesToBase64(fileCt), size: file.size, fileIv: bytesToBase64url(fileIvBytes) }
       } else {
-        envelope = { v: 2, title: title || undefined, content, language: type === 'code' ? language : undefined, receiptProof }
+        envelope = { v: 2, title: title || undefined, content, language: type === 'code' ? language : undefined, receiptProof, replyCapability: replyCapability ?? undefined }
       }
 
       const { ciphertextB64, ivB64 } = await sealContent(key, id, envelope)
@@ -207,7 +211,7 @@ export function CreatePage() {
         alg: 'aes-256-gcm', format: type,
         language: type === 'code' ? language : null,
         burnAfterRead: burn, deadSwitchDays: deadSwitch || null,
-        ttlSeconds: ttl, ownerToken, receiptProofHash, guardian, file: filePayload,
+        ttlSeconds: ttl, ownerToken, receiptProofHash, replies: replyVerifier ? { verifier: replyVerifier } : undefined, guardian, file: filePayload,
       })
 
       sessionStorage.setItem(`locknote:owner:${res.id}`, ownerToken)
@@ -253,7 +257,7 @@ export function CreatePage() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [type, file, content, passphrase, strength, title, language, burn, deadSwitch, guardianEnabled, guardianThreshold, guardianTotal, ttl])
+  }, [type, file, content, passphrase, strength, title, language, burn, allowReplies, deadSwitch, guardianEnabled, guardianThreshold, guardianTotal, ttl])
 
   if (result) {
     return (
@@ -603,9 +607,17 @@ export function CreatePage() {
               <Switch
                 id="burn-switch"
                 checked={burn}
-                onCheckedChange={setBurn}
+                onCheckedChange={(enabled) => { setBurn(enabled); if (enabled) setAllowReplies(false) }}
                 label="🔥 Burn after reading"
                 description="Self-destruct on first open"
+              />
+              <Switch
+                id="encrypted-replies-ui"
+                checked={allowReplies}
+                disabled={burn}
+                onCheckedChange={setAllowReplies}
+                label="💬 Allow encrypted replies"
+                description={burn ? 'Unavailable because this note burns on first read' : 'Recipient can send a short encrypted confirmation'}
               />
               <Switch
                 id="dead-switch-ui"

@@ -7,6 +7,8 @@ const base64urlOf = (bytes: number, label: string) =>
 const ownerTokenSchema = base64urlOf(CRYPTO_POLICY.ownerTokenBytes, 'ownerToken')
 const receiptProofHashSchema = base64urlOf(CRYPTO_POLICY.receiptProofBytes, 'receiptProofHash')
 const guardianVerifierSchema = base64urlOf(CRYPTO_POLICY.guardianCapabilityBytes, 'guardianVerifier')
+const replyVerifierSchema = base64urlOf(CRYPTO_POLICY.replyCapabilityBytes, 'replyVerifier')
+const replyCapabilitySchema = base64urlOf(CRYPTO_POLICY.replyCapabilityBytes, 'replyCapability')
 
 export const guardianSchema = z
   .object({
@@ -45,6 +47,8 @@ export const createPasteSchema = z
     receiptProofHash: receiptProofHashSchema,
     /** Optional K-of-N emergency revocation verifier; it never grants decryption. */
     guardian: guardianSchema.optional(),
+    /** Optional reply verifier. The raw capability remains inside the encrypted content envelope. */
+    replies: z.object({ verifier: replyVerifierSchema }).optional(),
     file: z
       .object({
         storagePayload: z.string().min(16).max(LIMITS.fileStoragePayload).refine(isCanonicalBase64, { message: 'storagePayload must be canonical base64' }),
@@ -68,6 +72,9 @@ export const createPasteSchema = z
     }
     if (value.kdf === 'pbkdf2' && value.iterations !== CRYPTO_POLICY.pbkdf2Iterations) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['iterations'], message: `PBKDF2 records must use ${CRYPTO_POLICY.pbkdf2Iterations} iterations` })
+    }
+    if (value.replies && value.burnAfterRead) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['replies'], message: 'encrypted replies are unavailable for burn-after-read secrets' })
     }
     if (value.file) {
       const encryptedBytes = Buffer.from(value.file.storagePayload, 'base64').byteLength
@@ -97,6 +104,13 @@ export const fileLeaseSchema = z.object({
 
 export const ownerSchema = z.object({
   ownerToken: ownerTokenSchema,
+})
+
+/** Opaque recipient reply. Plaintext, keys, and passphrases never reach this boundary. */
+export const replySchema = z.object({
+  capability: replyCapabilitySchema,
+  ciphertext: z.string().min(24).max(LIMITS.replyCiphertext).regex(/^[A-Za-z0-9_-]+$/, 'reply ciphertext must be base64url'),
+  iv: base64urlOf(CRYPTO_POLICY.ivBytes, 'reply IV'),
 })
 
 export const draftSchema = z.object({

@@ -7,6 +7,7 @@ export const SALT_BYTES = 32
 export const IV_BYTES = 12
 export const RECEIPT_PROOF_BYTES = 32
 export const GUARDIAN_CAPABILITY_BYTES = 32
+export const REPLY_CAPABILITY_BYTES = 32
 
 export type KdfKind = 'hkdf' | 'pbkdf2'
 
@@ -120,6 +121,8 @@ export interface ContentEnvelope {
   mime?: string
   /** Present only on v2 envelopes. Submitted after successful local decryption. */
   receiptProof?: string
+  /** Optional raw capability used only to submit an opaque recipient reply after local decrypt. */
+  replyCapability?: string
 }
 
 export async function sealContent(
@@ -147,6 +150,9 @@ export async function openContent(
   if (envelope.v === 2 && (!envelope.receiptProof || !/^[A-Za-z0-9_-]{43}$/.test(envelope.receiptProof))) {
     throw new IntegrityError('The encrypted envelope is missing its delivery proof.')
   }
+  if (envelope.replyCapability && !/^[A-Za-z0-9_-]{43}$/.test(envelope.replyCapability)) {
+    throw new IntegrityError('The encrypted envelope has an invalid reply capability.')
+  }
   return envelope
 }
 
@@ -163,6 +169,11 @@ export function generateReceiptProof(): string {
 /** Random capability split only for Guardian Wipe; it is never the content key. */
 export function generateGuardianCapability(): string {
   return bytesToBase64url(crypto.getRandomValues(new Uint8Array(GUARDIAN_CAPABILITY_BYTES)))
+}
+
+/** Random capability that permits an opaque recipient reply only after local envelope decryption. */
+export function generateReplyCapability(): string {
+  return bytesToBase64url(crypto.getRandomValues(new Uint8Array(REPLY_CAPABILITY_BYTES)))
 }
 
 /** Browser-side SHA-256 verifier. The raw value never reaches the server. */
@@ -192,6 +203,11 @@ export function generatePasteId(): string {
 /** AAD for the separately-encrypted file blob (distinct domain from content). */
 export function aadForFile(pasteId: string): Uint8Array {
   return utf8ToBytes(`${pasteId}|${PROTOCOL}|file`)
+}
+
+/** AAD for recipient replies; reply ciphertext cannot be replayed as note or file ciphertext. */
+export function aadForReply(pasteId: string): Uint8Array {
+  return utf8ToBytes(`${pasteId}|${PROTOCOL}|reply`)
 }
 
 export interface FragmentParts {

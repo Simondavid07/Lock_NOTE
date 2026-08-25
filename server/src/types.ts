@@ -26,6 +26,14 @@ export interface GuardianPolicy {
  * verifiers; it never holds the decryption key, plaintext, raw read proof, or
  * guardian capability.
  */
+/** An encrypted recipient reply. The server stores only this opaque envelope and minimal timing metadata. */
+export interface EncryptedReply {
+  id: string
+  ciphertext: string
+  iv: string
+  createdAt: number
+}
+
 export interface PasteRecord {
   id: string
   ciphertext: string
@@ -53,6 +61,10 @@ export interface PasteRecord {
   receiptAcknowledgedAt: number | null
   /** SHA-256 base64url digest of an optional K-of-N Guardian Wipe capability. */
   guardianVerifier: string | null
+  /** True only when recipients may send opaque encrypted replies after local decrypt. */
+  allowReplies: boolean
+  /** SHA-256 base64url digest of the reply capability embedded in encrypted content. */
+  replyVerifier: string | null
   guardianPolicy: GuardianPolicy | null
   burned: boolean
 }
@@ -76,6 +88,8 @@ export interface CreatePasteInput {
   receiptProofHash: string
   guardianVerifier: string | null
   guardianPolicy: GuardianPolicy | null
+  allowReplies: boolean
+  replyVerifier: string | null
 }
 
 /** Public metadata needed before decrypting. Never includes a capability, proof, or file location. */
@@ -134,6 +148,7 @@ export type AuditEventName =
   | 'paste:acknowledged'
   | 'paste:destroyed'
   | 'paste:guardian_destroyed'
+  | 'paste:reply_added'
   | 'paste:expired'
   | 'paste:dead'
   | 'draft:created'

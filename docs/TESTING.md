@@ -28,6 +28,7 @@ Lock Note is evaluated as a privacy-sensitive lifecycle system, not only a visua
 | Version-two proof envelope | A valid encrypted proof round-trips; a missing or malformed proof is rejected after authenticated decryption. |
 | Fixed KDF policy | Invalid salt lengths and non-policy PBKDF2 iteration counts fail before key derivation. |
 | Guardian shares | Valid K-of-N shares reconstruct the wipe capability; fewer, duplicate, modified, or mixed-set shares fail locally. |
+| Encrypted reply domain | Reply ciphertext uses a distinct `${pasteId}|locknote/v1|reply` AES-GCM AAD binding and cannot be replayed as note/file ciphertext. |
 | Generate a seal fingerprint | The visible fingerprint is deterministic for the same encrypted envelope metadata. |
 
 ### API lifecycle and authorization
@@ -42,6 +43,7 @@ Lock Note is evaluated as a privacy-sensitive lifecycle system, not only a visua
 | Verified delivery receipt | Only a matching proof from a successfully decrypted envelope creates the first receipt acknowledgement; guessed/replayed proofs fail. |
 | Private encrypted-file lease | Successful file consume returns no storage path, issues one short-lived lease, and rejects replay after ciphertext streaming. |
 | Guardian Wipe | A verifier-matched reconstructed capability deletes a note; an incorrect capability is forbidden. |
+| Encrypted recipient reply | Only a matching reply capability inside decrypted content may store bounded opaque reply ciphertext; owner capability is required for retrieval, replies cannot be enabled with burn-after-read, parent wipe removes reply ciphertext, and replies never refresh a dead-switch timer. |
 | Draft seal | A temporary draft can be converted into a sealed encrypted note. |
 | Invalid request | Zod validation returns a controlled client error rather than an unhandled failure. |
 | Rate-limit policy | Repeated traffic is constrained through API rate limiting. |
@@ -94,8 +96,9 @@ The smoke test confirms all of the following against the real deployed service:
 7. A proof acknowledgement is accepted once and the owner receipt reports one verified open.
 8. A private encrypted-file lease streams ciphertext once without returning a Storage path; lease replay fails.
 9. A Guardian Wipe verifier can revoke its test note.
-10. A draft room can be created and sealed.
-11. Remote wipe destroys an active paste.
+10. An opt-in encrypted recipient reply can be submitted with its decrypted capability, retrieved only with the owner capability, and locally decrypted by the sender.
+11. A draft room can be created and sealed.
+12. Remote wipe destroys an active paste and cascades to any reply ciphertext.
 
 A passing run provides meaningful reliability evidence because it exercises the same Vercel routing, environment configuration, API functions, and Supabase persistence used in the live evaluator demo.
 
@@ -122,6 +125,7 @@ The browser suite waits for intentional entrance animations to settle, then fail
 | Encrypted file note | File is retrieved through a 60-second one-use API lease, has no public storage path, and is decrypted only in the recipient browser. |
 | Verified delivery receipt | Owner sees a verified-open acknowledgement only after the recipient browser decrypts the envelope proof; guessed/replayed proof requests do not change it. |
 | Guardian Wipe | Create 2-of-3 cards, confirm a single card fails, then paste two cards into `/guardian-wipe`; the note becomes unavailable while no card reveals a decryption key. |
+| Encrypted recipient reply | On a non-burn note with replies enabled, open as a recipient, send a short confirmation, then open as owner and decrypt it locally. Confirm a bare paste ID or wrong reply capability fails, and explain that replies do not authenticate a human identity. |
 | GitHub sign-in | User returns from Supabase Auth to `/auth/callback` and reaches the requested same-origin private route. |
 | Protected route | Visiting `/dashboard` or `/profile` without a Supabase session redirects to `/login` without showing a demo identity. |
 | Account bio | An authenticated user can save an optional ≤160-character bio and see it after refresh. |
@@ -161,4 +165,5 @@ The user-recorded video should show a keyboard-only skip-link and command-palett
 | File upload/read fails | Supabase Storage, migration `005`, or service-role configuration is incomplete. | Apply migration `005_verified_delivery_and_guardian_wipe.sql`, confirm the `secrets` bucket is private, and check server-only key settings. |
 | File lease expired | A recipient waited more than 60 seconds or retried after a completed download. | Re-open the still-active note to obtain a fresh lease; do not expose a persistent object URL. |
 | Guardian Wipe rejects cards | The cards are insufficient, duplicated, altered, or from different notes/share sets. | Use the exact number of original cards for one note; never hand-edit the encoded `LNGW1` share string. |
+| Encrypted reply is unavailable | The note is burned, expired/dead, replies were not enabled during sealing, migration `007` is absent, or the reply capability is not from the decrypted envelope. | Use an active non-burn note, enable replies before sealing, apply `007_encrypted_recipient_replies.sql`, and never attempt to reconstruct a capability from server data. |
 | Live smoke cannot reach API | Wrong `API_URL` or deployment not ready. | Use the Vercel production URL and wait for `READY`. |

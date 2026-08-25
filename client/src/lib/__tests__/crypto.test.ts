@@ -3,6 +3,7 @@ import {
   IntegrityError,
   aadFor,
   aadForFile,
+  aadForReply,
   buildFragment,
   buildShareUrl,
   deriveEncryptionKey,
@@ -10,6 +11,7 @@ import {
   encrypt,
   fingerprint,
   generateOwnerToken,
+  generateReplyCapability,
   generatePasteId,
   generateSalt,
   generateSecret,
@@ -68,12 +70,21 @@ describe('deriveEncryptionKey + encrypt/decrypt (HKDF path)', () => {
     await expect(decrypt(key, ciphertext, wrongIv, aadFor('id'))).rejects.toBeInstanceOf(IntegrityError)
   })
 
-  it('content and file AAD domains are distinct', () => {
+  it('content, file, and reply AAD domains are distinct', () => {
     const a = aadFor('pasteId123')
     const b = aadForFile('pasteId123')
+    const c = aadForReply('pasteId123')
     expect(new TextDecoder().decode(a)).toBe('pasteId123|locknote/v1')
     expect(new TextDecoder().decode(b)).toBe('pasteId123|locknote/v1|file')
+    expect(new TextDecoder().decode(c)).toBe('pasteId123|locknote/v1|reply')
     expect(a).not.toEqual(b)
+    expect(b).not.toEqual(c)
+  })
+
+  it('rejects a reply ciphertext under the content AAD domain', async () => {
+    const key = await deriveEncryptionKey(generateSecret(), null, { salt: base64urlToBytes(generateSalt()), kdf: 'hkdf', iterations: 0 })
+    const { ciphertext, iv } = await encrypt(key, utf8ToBytes('encrypted reply'), aadForReply('pasteId123'))
+    await expect(decrypt(key, ciphertext, iv, aadFor('pasteId123'))).rejects.toBeInstanceOf(IntegrityError)
   })
 })
 
@@ -199,10 +210,12 @@ describe('randomness helpers', () => {
     expect(generateSecret()).toHaveLength(32)
   })
 
-  it('generateSalt and generateOwnerToken are non-empty base64url', () => {
+  it('generateSalt, owner token, and reply capability are non-empty base64url', () => {
     expect(generateSalt()).toMatch(/^[A-Za-z0-9_-]{20,}$/)
     expect(generateOwnerToken()).toMatch(/^[A-Za-z0-9_-]{20,}$/)
+    expect(generateReplyCapability()).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(generateSalt()).not.toBe(generateSalt())
+    expect(generateReplyCapability()).not.toBe(generateReplyCapability())
   })
 })
 
